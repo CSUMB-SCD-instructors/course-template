@@ -1,0 +1,45 @@
+# Compiled objects
+*.o
+*.a
+*.so
+*.dylib
+
+# Executables
+*.exe
+*.out
+a.out
+
+# Debug files
+*.dSYM/
+*.su
+*.idb
+*.pdb
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build directories
+build/
+bin/
+obj/
+
+# Test output
+test_results/
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Course-specific (you may want to ignore)
+# grades/
+# solutions/

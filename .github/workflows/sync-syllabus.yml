@@ -1,0 +1,223 @@
+name: Sync Syllabus to Syllabi Repository
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'syllabus.md'
+      - 'calendar.md'
+      - '.course-config'
+
+jobs:
+  sync-syllabus:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout source repository
+      uses: actions/checkout@v4
+      
+    - name: Checkout target repository
+      uses: actions/checkout@v4
+      with:
+        repository: CSUMB-SCD-instructors/syllabi
+        token: ${{ secrets.SYLLABI_SYNC_TOKEN }}
+        path: syllabi-repo
+        
+    - name: Copy course files
+      run: |
+        # Load course configuration
+        if [ -f .course-config ]; then
+          source .course-config
+        else
+          echo "Error: .course-config file not found"
+          exit 1
+        fi
+        
+        # Validate course code is set
+        if [ -z "$COURSE_CODE" ]; then
+          echo "Error: COURSE_CODE not set in .course-config"
+          exit 1
+        fi
+        
+        # Copy and update syllabus file with Jekyll front matter and corrected internal links
+        echo "---" > "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        echo "layout: default" >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        echo "title: \"${COURSE_CODE} - ${COURSE_NAME}\"" >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        echo "---" >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        echo "" >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        sed "s/syllabus\.md/${COURSE_CODE}-syllabus.md/g; s/calendar\.md/${COURSE_CODE}-calendar.md/g" syllabus.md >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        echo "" >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        echo "[← Back to Course List](index.html)" >> "syllabi-repo/${COURSE_CODE}-syllabus.md"
+        
+        # Handle calendar - either from URL or local file
+        if [ -n "${CALENDAR_URL}" ]; then
+          echo "Creating calendar with embedded iframe for ${COURSE_CODE}"
+          echo "---" > "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "layout: default" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "title: \"${COURSE_CODE} Course Calendar\"" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "---" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "# ${COURSE_CODE} Course Calendar" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "<iframe" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "  src=\"${CALENDAR_URL}\"" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "  width=\"100%\"" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "  height=\"1200\"" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "  frameborder=\"0\"" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "  style=\"border: 1px solid #ccc;\">" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "</iframe>" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "*Calendar is embedded from Google Sheets and updates automatically.*" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "[← Back to Course List](index.html)" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+        elif [ -f calendar.md ]; then
+          # Add Jekyll front matter to local calendar
+          echo "---" > "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "layout: default" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "title: \"${COURSE_CODE} Course Calendar\"" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "---" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          cat calendar.md >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "[← Back to Course List](index.html)" >> "syllabi-repo/${COURSE_CODE}-calendar.md"
+          echo "Local calendar.md copied for ${COURSE_CODE}"
+        else
+          echo "No calendar URL or calendar.md found for ${COURSE_CODE}"
+        fi
+        
+        # Create/update course metadata file
+        echo "${COURSE_CODE}|${COURSE_NAME}" > "syllabi-repo/${COURSE_CODE}-info.txt"
+        
+    - name: Setup Jekyll and create index page
+      run: |
+        cd syllabi-repo
+        
+        # Create Jekyll configuration
+        echo "title: Course Syllabi Collection" > _config.yml
+        echo "description: Automatically synced syllabi from various courses" >> _config.yml
+        echo "theme: minima" >> _config.yml
+        echo "markdown: kramdown" >> _config.yml
+        echo "highlighter: rouge" >> _config.yml
+        echo "permalink: /:basename.html" >> _config.yml
+        echo "plugins:" >> _config.yml
+        echo "  - jekyll-feed" >> _config.yml
+        echo "  - jekyll-sitemap" >> _config.yml
+        
+        # Generate index.md with Jekyll front matter
+        echo "---" > index.md
+        echo "layout: default" >> index.md
+        echo "title: \"Course Syllabi Collection\"" >> index.md
+        echo "---" >> index.md
+        echo "" >> index.md
+        echo "# Course Syllabi Collection" >> index.md
+        echo "" >> index.md
+        echo "This repository contains syllabi from various courses, automatically synced from their respective repositories." >> index.md
+        echo "" >> index.md
+        echo "## Available Courses" >> index.md
+        echo "" >> index.md
+        echo "| Course Code | Course Name | Syllabus | Calendar |" >> index.md
+        echo "|-------------|-------------|----------|----------|" >> index.md
+        
+        # Create a temporary file to store course info for sorting
+        temp_courses=$(mktemp)
+        
+        # Collect all unique course codes from syllabus files
+        for syllabus in *-syllabus.md; do
+          if [ -f "$syllabus" ]; then
+            # Extract course code from filename
+            course_code=$(echo "$syllabus" | sed 's/-syllabus\.md$//')
+            
+            # Get course name from info file, fallback to course code
+            course_name="$course_code"
+            if [ -f "${course_code}-info.txt" ]; then
+              course_name=$(cut -d'|' -f2 "${course_code}-info.txt")
+            fi
+            
+            # Check if calendar exists
+            calendar_link="—"
+            if [ -f "${course_code}-calendar.md" ]; then
+              calendar_link="[Calendar 📅](${course_code}-calendar.html)"
+            fi
+            
+            echo "$course_code|$course_name|[Syllabus 📄](${course_code}-syllabus.html)|$calendar_link" >> "$temp_courses"
+          fi
+        done
+        
+        # Sort courses by course code and add to both index and README
+        if [ -s "$temp_courses" ]; then
+          # First, create a sorted temp file for reuse
+          sorted_courses=$(mktemp)
+          sort "$temp_courses" > "$sorted_courses"
+          
+          # Add to index.md
+          while IFS='|' read -r code name syllabus calendar; do
+            echo "| $code | $name | $syllabus | $calendar |" >> index.md
+          done < "$sorted_courses"
+          
+          # Create README.md for GitHub display (without Jekyll front matter)
+          echo "# Course Syllabi Collection" > README.md
+          echo "" >> README.md
+          echo "This repository contains syllabi from various courses, automatically synced from their respective repositories." >> README.md
+          echo "" >> README.md
+          echo "## Available Courses" >> README.md
+          echo "" >> README.md
+          echo "| Course Code | Course Name | Syllabus | Calendar |" >> README.md
+          echo "|-------------|-------------|----------|----------|" >> README.md
+          
+          # Add to README.md
+          while IFS='|' read -r code name syllabus calendar; do
+            echo "| $code | $name | $syllabus | $calendar |" >> README.md
+          done < "$sorted_courses"
+          
+          echo "" >> README.md
+          echo "---" >> README.md
+          echo "*This page is automatically generated by GitHub Actions*" >> README.md
+          
+          rm -f "$sorted_courses"
+        else
+          # Create empty README if no courses
+          echo "# Course Syllabi Collection" > README.md
+          echo "" >> README.md
+          echo "This repository contains syllabi from various courses, automatically synced from their respective repositories." >> README.md
+          echo "" >> README.md
+          echo "## Available Courses" >> README.md
+          echo "" >> README.md
+          echo "No courses available yet." >> README.md
+          echo "" >> README.md
+          echo "---" >> README.md
+          echo "*This page is automatically generated by GitHub Actions*" >> README.md
+        fi
+        
+        rm -f "$temp_courses"
+        
+        # Add footer to index
+        echo "" >> index.md
+        echo "---" >> index.md
+        echo "*This page is automatically generated by GitHub Actions*" >> index.md
+
+    - name: Commit and push changes
+      run: |
+        cd syllabi-repo
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        
+        # Load course configuration
+        source ../.course-config
+        
+        # Extract commit info
+        COMMIT_SHA="${{ github.sha }}"
+        SHORT_SHA="${COMMIT_SHA:0:7}"
+        
+        # Add all changes (syllabus + calendar + info + Jekyll files)
+        git add "${COURSE_CODE}-syllabus.md" "${COURSE_CODE}-info.txt" README.md index.md _config.yml
+        if [ -f "${COURSE_CODE}-calendar.md" ]; then
+          git add "${COURSE_CODE}-calendar.md"
+        fi
+        
+        # Check if there are changes to commit
+        if git diff --staged --quiet; then
+          echo "No changes to commit"
+        else
+          git commit -m "Update ${COURSE_CODE} syllabus and README from ${SHORT_SHA}"
+          git push
+        fi

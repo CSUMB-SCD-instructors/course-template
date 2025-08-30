@@ -1,0 +1,17 @@
+# Files and directories to exclude when publishing to student repository
+# Similar to .gitignore syntax
+
+# Docker infrastructure not needed by students
+/docker/
+
+# Scripts directory contains internal/instructor tools
+/scripts/
+
+# Deployment keys and sensitive configuration
+*.pub
+*deploy-key*
+
+# Common files that shouldn't go to students
+.studentignore
+
+CLAUDE.md

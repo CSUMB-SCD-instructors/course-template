@@ -159,12 +159,25 @@ if [ -f ".studentignore" ]; then
         
         if [ -n "$pattern" ]; then
             echo -e "  Excluding: ${pattern}"
+            # Handle absolute paths (starting with /)
+            if [[ "$pattern" == /* ]]; then
+                # Remove leading slash for relative path
+                pattern="${pattern#/}"
+                if [ -d "$pattern" ]; then
+                    rm -rf "$pattern" 2>/dev/null || true
+                elif [ -f "$pattern" ]; then
+                    rm -f "$pattern" 2>/dev/null || true
+                fi
             # Handle directory patterns (ending with /)
-            if [[ "$pattern" == */ ]]; then
+            elif [[ "$pattern" == */ ]]; then
                 rm -rf "${pattern%/}" 2>/dev/null || true
             else
                 # Handle file patterns (use find for glob support)
                 find . -name "$pattern" -delete 2>/dev/null || true
+                # Also try exact match for files
+                if [ -f "$pattern" ]; then
+                    rm -f "$pattern" 2>/dev/null || true
+                fi
             fi
         fi
     done < ".studentignore"

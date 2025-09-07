@@ -1,0 +1,13 @@
+name: Protect main during semester
+on:
+  pull_request:
+    branches: [main]
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fail if student-visible during active semester
+        if: ${{ vars.SEMESTER_ACTIVE == 'true' && contains(join(github.event.pull_request.labels.*.name, ','), 'student-visible') }}
+        run: |
+          echo "Student-visible changes blocked during active semester."
+          exit 1

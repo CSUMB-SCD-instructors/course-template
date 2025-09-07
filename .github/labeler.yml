@@ -1,0 +1,6 @@
+student-visible:
+  - changed-files:
+      - any-glob-to-any-file: ["programming-assignments/**", "labs/**"]
+safe-now:
+  - changed-files:
+      - any-glob-to-any-file: ["demos/**", "helpers/**", "scripts/**"]

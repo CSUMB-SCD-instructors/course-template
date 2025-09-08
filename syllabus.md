@@ -1,5 +1,8 @@
 # [COURSE_CODE] ([COURSE_NAME]) Syllabus
 
+Note: All syllabi should conform to the defined syllabus structure.
+For CSUMB that is under section 3.10 of [this document](https://csumb.edu/policy/course-syllabus-policy/).
+
 ## Summary
 
 [Brief description of the course goals and what students will learn]

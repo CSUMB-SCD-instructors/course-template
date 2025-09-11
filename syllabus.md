@@ -84,9 +84,9 @@ There are three groups of assignments, briefly described in the table below.
 
 | Assignment Kind                                       | Value |
 |:------------------------------------------------------|:-----:|
-| [Programming assignments](#programming-assignments)   | 35%   |
-| [Exams](#exams)                                       | 35%   |
-| [Participation](#participation)                       | 30%   |
+| [Programming assignments](#programming-assignments)   |  35%  |
+| [Exams](#exams)                                       |  35%  |
+| [Participation](#participation)                       |  30%  |
 
 ### Programming Assignments
 
@@ -107,7 +107,7 @@ In-class participation has four components:
 
 ### Extra Credit Potential
 
-**Introductory Meeting (2%):** During the first month of class, stop by my office and chat for a bit to get to know each other and you'll get a small number of bonus points.
+**Introductory Meeting (2%):** During the first month of class, stop by my office and chat for a bit to get to know each other, and you'll get a small number of bonus points.
 
 ### Grade Assignment
 

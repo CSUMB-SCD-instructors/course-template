@@ -25,7 +25,7 @@ if [ -z "$COURSE_NAME" ]; then
 fi
 
 # Check for default template values that shouldn't be used
-if [ "$COURSE_CODE" = "CSTXXX" ] || [ "$COURSE_CODE" = "CST334" ]; then
+if [ "$COURSE_CODE" = "CSTXXX" ] ; then
     echo -e "${RED}Error: COURSE_CODE appears to be a template default value: '$COURSE_CODE'${NC}"
     echo -e "${RED}Please update .course-config with your actual course code before publishing${NC}"
     exit 1

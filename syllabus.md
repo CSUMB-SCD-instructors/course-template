@@ -1,33 +1,46 @@
 # [COURSE_CODE] ([COURSE_NAME]) Syllabus
 
+Note: All syllabi should conform to the defined syllabus structure.
+For CSUMB that is under section 3.10 of [this document](https://csumb.edu/policy/course-syllabus-policy/).
+
 ## Summary
 
 [Brief description of the course goals and what students will learn]
 
 - **Grading:**
-There are three assignment groups that you must achieve a minimum grade of 40% in to pass the course.
-They are [Programming Assignments](#programming-assignments) (35%), [Exams](#exams) (35%), and [Participation](#participation) (30%).
-Final grades are calculated by rounding to the nearest whole number and converted to letter grades using the standard range.
-*Details can be found in [grading](#grading).*
+[Add grading details here]
+*Details can be found in [grading section](#grading).*
 
 - **Late work:**
-Late submissions are accepted only for Programming assignments and Labs, and have a 10% deduction per calendar day late.
+[Add late policy summary here]
 *Details can be found in [late policy](#late-policy).*
-
+  
 - **Getting help:**
-There are a ton of office hours spread throughout the week so make use of them if you have any questions!
-In general, you can use the [class slack channel](#) to ask questions (but not post code!), or send me questions (code okay!) via slack or my email.
-You are **not** allowed to use LLMs or classmates to write code for you, but you can ask them clarifying questions about material.
-*Details can be found in [personnel](#personnel).*
-
-**Any other questions?**
-I tried to make this document exhaustive (and it just turned out exhausting...), but if there's something you can't find an answer to don't hesitate to reach out via slack or email!
+[Add contact overview here]
+*Details can be found in [Instructor Information](#instructor-information).*
 
 ## Course Information
+
+### Course Details
+
+- **Course Title:** [COURSE_NAME]
+- **Course Number:** [COURSE_CODE]
+- **Meeting Location:** [Physical location or virtual platform]
+- **Meeting Days & Times:** [Days and times of class meetings]
+- **Units:** [Number of units]
+- **Prerequisites:** [Prerequisites from catalog]
 
 ### Course Description
 
 [Course description from catalog]
+
+### Technology Requirements
+
+Students must have access to:
+- A computer with reliable internet connection
+- [Specific software/hardware requirements]
+- Access to Canvas learning management system
+- [Any other technology requirements specific to the course]
 
 ### Course Objectives
 
@@ -45,13 +58,16 @@ The major topics covered in class are:
 2. **[Topic 2]** – [Description]
 3. **[Topic 3]** – [Description]
 
-### Personnel
+### Instructor Information
 
 - [Instructor Name] (instructor)
   - E-mail: [`[email]`](mailto:[email])
   - Web: [**`[website]`**]([website])
   - Office: [Office Location]
   - Office Hours: [Office Hours], or [by appointment]([appointment_link])
+
+**Getting Help:** Office hours are available throughout the week - make use of them! 
+You can also use the class communication platform to ask questions (but not post code/answers on public channels!), or send me questions via email.
 
 ### Materials
 
@@ -60,9 +76,6 @@ The major topics covered in class are:
 - Canvas Course Page: [Canvas link]
 - Syllabus: [syllabus.md](syllabus.md)
 
-### Prerequisites/Corequisites
-
-[Prerequisites]
 
 ## Grading
 
@@ -71,9 +84,9 @@ There are three groups of assignments, briefly described in the table below.
 
 | Assignment Kind                                       | Value |
 |:------------------------------------------------------|:-----:|
-| [Programming assignments](#programming-assignments)   | 35%   |
-| [Exams](#exams)                                       | 35%   |
-| [Participation](#participation)                       | 30%   |
+| [Programming assignments](#programming-assignments)   |  35%  |
+| [Exams](#exams)                                       |  35%  |
+| [Participation](#participation)                       |  30%  |
 
 ### Programming Assignments
 
@@ -94,9 +107,7 @@ In-class participation has four components:
 
 ### Extra Credit Potential
 
-#### Introductory Meeting (2%)
-
-During the first month of class, stop by my office and chat for a bit to get to know each other and you'll get a small number of bonus points.
+**Introductory Meeting (2%):** During the first month of class, stop by my office and chat for a bit to get to know each other, and you'll get a small number of bonus points.
 
 ### Grade Assignment
 
@@ -122,19 +133,11 @@ Grades as assigned based on the standard ranges, which are outlined below.
 
 [Attendance policy]
 
-### Communication
-
-#### Contacting me
-
-[Contact information and preferred methods]
-
 ### Late Policy
 
 [Late work policy details]
 
 ## Academic Honor Code
-
-### Summary of policy
 
 **You may talk to other students or LLMs for:**
 
@@ -151,3 +154,35 @@ Grades as assigned based on the standard ranges, which are outlined below.
 ### The use of LLMs
 
 [LLM usage policy for the course]
+
+### University Academic Integrity Policy
+
+For complete academic integrity policies, please refer to the [CSUMB Academic Integrity Policy](https://csumb.edu/policy/academic-integrity-policy).
+
+## University Policies and Resources
+
+### Enrollment and Registration
+
+For information about requesting an incomplete or withdrawal from the course, please refer to CSUMB's [Enrollment and Registration Policy](https://csumb.edu/policy/enrollment-registration-policy).
+
+For grade appeals, consult the [Grade Appeal Policy](https://csumb.edu/policy/grade-appeal-policy).
+
+### Disability Services
+
+If you have a disability that may require academic accommodations, please contact the [Student Disability Resources](https://csumb.edu/sdr) office as soon as possible. All discussions will remain confidential. Students who have already received approval for accommodations from SDR should schedule a meeting with the instructor as early in the semester as possible.
+
+### Collection of Student Work
+
+Student work may be collected and used for course assessment and improvement purposes. By enrolling in this course, you consent to the collection and analysis of your academic work for educational assessment. All student work will be handled confidentially and in accordance with FERPA regulations.
+
+## Syllabus Change Policy
+
+This syllabus is subject to change at the instructor's discretion to enhance learning or accommodate unforeseen circumstances. Students will be notified of any substantive changes (such as changes to due dates, point values of assignments, or major policy modifications) via Canvas announcement and/or email at least one week in advance when possible. 
+
+The process for syllabus changes:
+1. Instructor identifies need for change
+2. Revised syllabus section is prepared
+3. Students are notified via Canvas and email
+4. Change takes effect after notification period
+
+Students are responsible for staying current with any announced changes to the syllabus.

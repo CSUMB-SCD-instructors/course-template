@@ -34,7 +34,7 @@ def grade(*args, **kwargs) -> GradingResult:
   # todo: Replace this code with whatever you need to do to grade an assignment!
   
   default_results = GradingResult(
-    100.0,
+    0.0,
     comments="No grading done.",
     logs="N/A"
   )

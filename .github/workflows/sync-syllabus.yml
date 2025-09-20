@@ -90,6 +90,7 @@ jobs:
         if [ -n "$calendar_link" ]; then
           echo "course_calendar: \"${calendar_link}\"" >> "syllabi-repo/_active/${COURSE_CODE}-syllabus.md"
         fi
+        echo "last_updated: $(date +%Y-%m-%d)" >> "syllabi-repo/_active/${COURSE_CODE}-syllabus.md"
         echo "---" >> "syllabi-repo/_active/${COURSE_CODE}-syllabus.md"
         echo "" >> "syllabi-repo/_active/${COURSE_CODE}-syllabus.md"
 
@@ -104,6 +105,7 @@ jobs:
           echo "course_code: \"${COURSE_CODE}\"" >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"
           echo "course_name: \"${COURSE_NAME}\"" >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"
           echo "title: \"${COURSE_CODE} Course Calendar\"" >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"
+          echo "last_updated: $(date +%Y-%m-%d)" >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"
           echo "---" >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"
           echo "" >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"
           cat calendar.md >> "syllabi-repo/_active/${COURSE_CODE}-calendar.md"

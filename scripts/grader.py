@@ -30,7 +30,7 @@ def parse_flags():
   return parser.parse_args()
 
 
-def grade(*args, **kwargs) -> GradingResult:
+def grade(PA, *args, **kwargs) -> GradingResult:
   # todo: Replace this code with whatever you need to do to grade an assignment!
   
   default_results = GradingResult(

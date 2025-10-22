@@ -1,17 +1,37 @@
 # Files and directories to exclude when publishing to student repository
 # Similar to .gitignore syntax
+#
+# This file controls what gets published when running scripts/publish_to_students.sh
+# Files listed here will be version-controlled in the instructor repository
+# but will NOT be published to the student-facing repository
 
-# Docker infrastructure not needed by students
+# Template and configuration files
+.studentignore
+.course-config
+.course-config.example
+CLAUDE.md
+TEMPLATE_SETUP.md
+
+# Instructor-only infrastructure
 /docker/
 
-# Scripts directory contains internal/instructor tools
-/scripts/
+# Instructor-only scripts (students can access other scripts for grading)
+/scripts/publish_to_students.sh
+/scripts/README.md
+
+# Reserved/hidden test files (students should not see these)
+*reserved*
+*hidden*
 
 # Deployment keys and sensitive configuration
 *.pub
 *deploy-key*
 
-# Common files that shouldn't go to students
-.studentignore
-
-CLAUDE.md
+# Common instructor-only patterns (uncomment as needed)
+# solutions/
+# grades/
+# instructor-notes/
+# */solution.c
+# *_solution.py
+# *_solution.js
+# *.solution.*

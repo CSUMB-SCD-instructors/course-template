@@ -1,0 +1,18 @@
+# Course Configuration Template
+# Copy this file to .course-config and update with your course details
+
+# Required: Your course code (e.g., CST334, CST363)
+COURSE_CODE=CST334
+
+# Required: Full course name
+COURSE_NAME="Introduction to Operating Systems"
+
+# Optional: External calendar URL (e.g., Google Sheets published URL)
+# If not set and calendar.md exists, a local calendar will be used
+# If not set and no calendar.md, no calendar link will be shown
+CALENDAR_URL="https://docs.google.com/spreadsheets/d/e/2PACX-1vSfCFlcT6Vhz4R0Lg3fB1I_KVK69oY04uWy24lLNDxgEvB7Zt1KzGnnNny1TdbTE5XYeejNphli9UVI/pubhtml?gid=777267647&single=true&widget=true&headers=false"
+
+# Optional: Student repository URL
+# Defaults to: https://github.com/CSUMB-SCD-instructors/${COURSE_CODE}.git
+# Only set this if your student repository has a different name
+# STUDENT_REPO_URL="https://github.com/CSUMB-SCD-instructors/CST334.git"

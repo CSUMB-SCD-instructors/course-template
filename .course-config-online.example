@@ -1,0 +1,34 @@
+# Online Course Configuration Template
+# Copy this file to .course-config-online and update with your online course details
+
+# Required: Your course code (typically same as in-person, or add -online suffix)
+COURSE_CODE=CST334
+
+# Required: Full course name (indicate this is the online variant)
+COURSE_NAME="Introduction to Operating Systems - Online"
+
+# Optional: External calendar URL for online section
+# If not set and calendar.md exists, a local calendar will be used
+CALENDAR_URL="https://docs.google.com/spreadsheets/d/e/2PACX-1vSfCFlcT6Vhz4R0Lg3fB1I_KVK69oY04uWy24lLNDxgEvB7Zt1KzGnnNny1TdbTE5XYeejNphli9UVI/pubhtml?gid=777267647&single=true&widget=true&headers=false"
+
+# Required: Student repository URL for online section
+# Should point to a different repository than the in-person version
+STUDENT_REPO_URL="https://github.com/CSUMB-SCD-instructors/CST334-online.git"
+
+# Optional: Syllabus mapping
+# Use a different syllabus file for online students
+SYLLABUS_SOURCE="syllabus-online.md"
+SYLLABUS_DEST="syllabus.md"
+
+# Optional: Assignment remapping (bash array syntax)
+# Remap assignment directories when publishing to online students
+# Format: "source_dir:dest_dir"
+# Assumes programming-assignments/ prefix unless absolute path provided
+ASSIGNMENT_REMAP=(
+  "PA1-shell:PA2-shell"
+  "PA2-scheduler:PA1-scheduler"
+)
+
+# Optional: Custom studentignore file
+# Use different exclusion rules for online vs in-person
+STUDENTIGNORE_FILE=".studentignore-online"

@@ -4,14 +4,58 @@
 
 set -e  # Exit on any error
 
+# Colors for output (defined early for usage messages)
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m' # No Color
+
+# Parse command line arguments
+CONFIG_FILE=".course-config"
+PUBLISHING_MODE="default"
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --online)
+            CONFIG_FILE=".course-config-online"
+            PUBLISHING_MODE="online"
+            shift
+            ;;
+        --config)
+            CONFIG_FILE="$2"
+            PUBLISHING_MODE="custom"
+            shift 2
+            ;;
+        -h|--help)
+            echo "Usage: $0 [OPTIONS]"
+            echo ""
+            echo "Options:"
+            echo "  --online           Use online course configuration (.course-config-online)"
+            echo "  --config FILE      Use custom configuration file"
+            echo "  -h, --help         Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  $0                 # Publish in-person course (default)"
+            echo "  $0 --online        # Publish online course variant"
+            echo "  $0 --config .course-config-custom  # Use custom config"
+            exit 0
+            ;;
+        *)
+            echo -e "${RED}Error: Unknown option: $1${NC}"
+            echo "Use --help for usage information"
+            exit 1
+            ;;
+    esac
+done
+
 # Load course configuration
-if [ ! -f ".course-config" ]; then
-    echo -e "${RED}Error: .course-config file not found${NC}"
+if [ ! -f "$CONFIG_FILE" ]; then
+    echo -e "${RED}Error: Configuration file not found: $CONFIG_FILE${NC}"
     echo -e "${RED}This file is required to determine course-specific settings${NC}"
     exit 1
 fi
 
-source .course-config
+source "$CONFIG_FILE"
 
 # Validate required configuration
 if [ -z "$COURSE_CODE" ]; then
@@ -37,9 +81,26 @@ if [ "$COURSE_NAME" = "Course Title" ] || [ "$COURSE_NAME" = "Your Course Name" 
     exit 1
 fi
 
-# Check if STUDENT_REPO_URL is defined in .course-config, otherwise use course-based default
+# Set defaults for optional configuration variables
 if [ -z "$STUDENT_REPO_URL" ]; then
     STUDENT_REPO_URL="https://github.com/CSUMB-SCD-instructors/${COURSE_CODE}.git"
+fi
+
+if [ -z "$SYLLABUS_SOURCE" ]; then
+    SYLLABUS_SOURCE="syllabus.md"
+fi
+
+if [ -z "$SYLLABUS_DEST" ]; then
+    SYLLABUS_DEST="syllabus.md"
+fi
+
+if [ -z "$STUDENTIGNORE_FILE" ]; then
+    STUDENTIGNORE_FILE=".studentignore"
+fi
+
+# ASSIGNMENT_REMAP should be an array, default to empty if not set
+if [ -z "${ASSIGNMENT_REMAP+x}" ]; then
+    ASSIGNMENT_REMAP=()
 fi
 
 # Configuration
@@ -47,23 +108,43 @@ STUDENT_REMOTE_NAME="student-repo"
 SOURCE_BRANCH="redacted_for_students"
 TARGET_BRANCH="main"  # Branch name in student repository
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m' # No Color
-
+# Display publishing configuration
 echo -e "${YELLOW}Publishing ${SOURCE_BRANCH} to student repository...${NC}"
+if [ "$PUBLISHING_MODE" = "online" ]; then
+    echo -e "${YELLOW}Mode: ${GREEN}ONLINE${NC}"
+elif [ "$PUBLISHING_MODE" = "custom" ]; then
+    echo -e "${YELLOW}Mode: ${GREEN}CUSTOM (${CONFIG_FILE})${NC}"
+fi
 echo -e "${YELLOW}Course Configuration:${NC}"
 echo -e "  Course Code: ${GREEN}${COURSE_CODE}${NC}"
 echo -e "  Course Name: ${GREEN}${COURSE_NAME}${NC}"
 echo -e "  Student Repo: ${GREEN}${STUDENT_REPO_URL}${NC}"
+
+# Show syllabus mapping if non-default
+if [ "$SYLLABUS_SOURCE" != "syllabus.md" ] || [ "$SYLLABUS_DEST" != "syllabus.md" ]; then
+    echo -e "  Syllabus: ${GREEN}${SYLLABUS_SOURCE}${NC} → ${GREEN}${SYLLABUS_DEST}${NC}"
+fi
+
+# Show assignment remapping if configured
+if [ ${#ASSIGNMENT_REMAP[@]} -gt 0 ]; then
+    echo -e "  ${YELLOW}Assignment Remapping:${NC}"
+    for remap in "${ASSIGNMENT_REMAP[@]}"; do
+        IFS=':' read -r source dest <<< "$remap"
+        echo -e "    ${GREEN}${source}${NC} → ${GREEN}${dest}${NC}"
+    done
+fi
+
+# Show studentignore file if non-default
+if [ "$STUDENTIGNORE_FILE" != ".studentignore" ]; then
+    echo -e "  Exclusions file: ${GREEN}${STUDENTIGNORE_FILE}${NC}"
+fi
+
 echo ""
 
 # Final safety check with course details
-read -p "Confirm this is the correct course before publishing (y/N): " -r
+read -p "Confirm this is the correct course configuration before publishing (y/N): " -r
 if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Publication cancelled - please verify your .course-config settings${NC}"
+    echo -e "${YELLOW}Publication cancelled - please verify your configuration settings${NC}"
     exit 0
 fi
 
@@ -142,12 +223,48 @@ else
     git rm -rf . 2>/dev/null || true
 fi
 
-# Copy current state from redacted branch, respecting .studentignore
+# Copy current state from redacted branch
 git checkout ${SOURCE_BRANCH} -- .
 
-# Remove files/directories specified in .studentignore
-if [ -f ".studentignore" ]; then
-    echo -e "${YELLOW}Applying .studentignore filters...${NC}"
+# Apply syllabus mapping if configured
+if [ "$SYLLABUS_SOURCE" != "syllabus.md" ] && [ -f "$SYLLABUS_SOURCE" ]; then
+    echo -e "${YELLOW}Mapping syllabus: ${SYLLABUS_SOURCE} → ${SYLLABUS_DEST}${NC}"
+    if [ "$SYLLABUS_SOURCE" != "$SYLLABUS_DEST" ]; then
+        mv "$SYLLABUS_SOURCE" "$SYLLABUS_DEST" 2>/dev/null || cp "$SYLLABUS_SOURCE" "$SYLLABUS_DEST"
+    fi
+elif [ "$SYLLABUS_SOURCE" != "syllabus.md" ]; then
+    echo -e "${RED}Warning: Syllabus source file not found: ${SYLLABUS_SOURCE}${NC}"
+fi
+
+# Apply assignment remapping if configured
+if [ ${#ASSIGNMENT_REMAP[@]} -gt 0 ]; then
+    echo -e "${YELLOW}Applying assignment remapping...${NC}"
+    for remap in "${ASSIGNMENT_REMAP[@]}"; do
+        IFS=':' read -r source dest <<< "$remap"
+
+        # Determine base directory (assume programming-assignments/ if not absolute path)
+        if [[ "$source" != /* ]]; then
+            source_path="programming-assignments/${source}"
+            dest_path="programming-assignments/${dest}"
+        else
+            source_path="$source"
+            dest_path="$dest"
+        fi
+
+        if [ -d "$source_path" ]; then
+            echo -e "  Renaming: ${source_path} → ${dest_path}"
+            # Create parent directory if needed
+            mkdir -p "$(dirname "$dest_path")"
+            mv "$source_path" "$dest_path"
+        else
+            echo -e "  ${RED}Warning: Source directory not found: ${source_path}${NC}"
+        fi
+    done
+fi
+
+# Remove files/directories specified in studentignore file
+if [ -f "$STUDENTIGNORE_FILE" ]; then
+    echo -e "${YELLOW}Applying ${STUDENTIGNORE_FILE} filters...${NC}"
     while IFS= read -r pattern || [ -n "$pattern" ]; do
         # Skip empty lines and comments
         if [[ -z "$pattern" || "$pattern" =~ ^[[:space:]]*# ]]; then
@@ -180,7 +297,7 @@ if [ -f ".studentignore" ]; then
                 fi
             fi
         fi
-    done < ".studentignore"
+    done < "$STUDENTIGNORE_FILE"
 fi
 
 git add .

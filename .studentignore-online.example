@@ -1,0 +1,42 @@
+# Files and directories to exclude when publishing to ONLINE student repository
+# Similar to .gitignore syntax
+#
+# This file is used when running: ./scripts/publish_to_students.sh --online
+
+# Template and configuration files
+.studentignore
+.studentignore-online
+.course-config
+.course-config.example
+.course-config-online
+.course-config-online.example
+CLAUDE.md
+TEMPLATE_SETUP.md
+
+# Instructor-only infrastructure
+/docker/
+
+# Instructor-only scripts (students can access other scripts for grading)
+/scripts/publish_to_students.sh
+/scripts/README.md
+
+# Reserved/hidden test files (students should not see these)
+*reserved*
+*hidden*
+
+# Deployment keys and sensitive configuration
+*.pub
+*deploy-key*
+
+# Exclude in-person syllabus (online students get syllabus-online.md → syllabus.md)
+syllabus.md
+syllabus-online.md
+
+# Common instructor-only patterns (uncomment as needed)
+# solutions/
+# grades/
+# instructor-notes/
+# */solution.c
+# *_solution.py
+# *_solution.js
+# *.solution.*

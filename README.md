@@ -17,10 +17,14 @@ This repository serves as a template for creating new course repositories with a
 ## Repository Structure
 
 - `syllabus.md` - Course syllabus (automatically published to centralized syllabi site)
+- `syllabus-online.md` - Optional online course syllabus variant
 - `calendar.md` - Course calendar (optional, or use CALENDAR_URL in .course-config)
 - `.course-config` - Course configuration variables (see `.course-config.example`)
 - `.course-config.example` - Template showing required configuration format
+- `.course-config-online` - Optional online course configuration
+- `.course-config-online.example` - Template for online course variant
 - `.studentignore` - Files/directories to exclude when publishing to student repositories
+- `.studentignore-online.example` - Template for online course exclusions
 - `.github/workflows/` - Automated syllabus publishing workflow
 - `demos/` - In-class demonstration code
 - `labs/` - Lab assignments and starter code
@@ -134,6 +138,25 @@ git push -u origin redacted_for_students
 # STUDENT_REPO_URL defaults to https://github.com/CSUMB-SCD-instructors/${COURSE_CODE}.git
 ```
 
+### 5. Online Course Setup (Optional)
+If you teach both in-person and online sections:
+```bash
+# Create online configuration
+cp .course-config-online.example .course-config-online
+# Edit with online course details
+
+# Create online syllabus
+cp syllabus.md syllabus-online.md
+# Customize for online students
+
+# Create online studentignore (optional)
+cp .studentignore-online.example .studentignore-online
+# Customize exclusions for online vs in-person
+
+# Configure assignment remapping in .course-config-online if needed
+# See .course-config-online.example for ASSIGNMENT_REMAP syntax
+```
+
 ## Workflows and Automation
 
 ### Syllabus Publishing Workflow
@@ -163,8 +186,23 @@ See `scripts/README.md` for complete documentation.
 **Publishing process:**
 1. Merge `main` → `redacted_for_students`
 2. Redact solutions (manual step - replace with `// todo` comments)
-3. Run `./scripts/publish_to_students.sh`
+3. Run `./scripts/publish_to_students.sh` (or `--online` for online variant)
 4. Script applies `.studentignore` filters and publishes to student repository
+
+**Online course support:**
+```bash
+# Publish in-person version
+./scripts/publish_to_students.sh
+
+# Publish online version with different syllabus and assignment ordering
+./scripts/publish_to_students.sh --online
+```
+
+The `--online` flag uses `.course-config-online` to:
+- Use a different student repository
+- Map `syllabus-online.md` → `syllabus.md`
+- Remap assignment directories (e.g., swap PA1 and PA2)
+- Apply different `.studentignore` rules
 
 ## Course Management
 

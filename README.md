@@ -89,7 +89,7 @@ instructor-notes/
 ```
 
 **Note on slides/binary files:**
-- For PPTX files you want students to access, consider keeping them in a separate repository or using a PPTX-to-PDF conversion workflow
+- Use `scripts/strip_pptx_notes.py` to remove speaker notes from PPTX files before sharing with students
 - For large binary files (>50MB), consider Git LFS: `git lfs track "*.pptx"`
 - Files in `.studentignore` are version-controlled in instructor repo but NOT published to students
 
@@ -202,9 +202,29 @@ CST334-operating-systems/
   ├── grade.py                    # Students can access
   ├── tests-public/              # Students can access
   ├── tests-reserved/            # Excluded from student repos
+  ├── strip_pptx_notes.py        # Utility to remove speaker notes from slides
   └── publish_to_students.sh     # Excluded from student repos
   ```
 - For course-specific grading documentation, see individual course repositories
+
+### Sharing Slides with Students
+Use `scripts/strip_pptx_notes.py` to remove instructor notes from PowerPoint files:
+
+```bash
+# Strip notes and create new file
+python scripts/strip_pptx_notes.py lecture01.pptx
+# Creates: lecture01_no_notes.pptx
+
+# Process multiple files
+python scripts/strip_pptx_notes.py slides/*.pptx
+
+# Specify custom output name
+python scripts/strip_pptx_notes.py lecture01.pptx -o lecture01_student.pptx
+```
+
+**Requirements:** `pip install python-pptx` (or `uv sync` if using the project dependencies)
+
+**Note:** This only works with `.pptx` files (modern PowerPoint format). Old `.ppt` files must be converted first.
 
 ## Getting Help
 

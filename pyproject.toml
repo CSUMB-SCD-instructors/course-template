@@ -1,9 +1,10 @@
 [project]
 name = "course-template"
 version = "0.1.0"
-description = "Add your description here"
+description = "Course repository template with syllabus publishing and student distribution"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "pyyaml>=6.0.2",
+    "python-pptx>=0.6.21",
 ]

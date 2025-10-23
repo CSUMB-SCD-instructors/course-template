@@ -9,6 +9,8 @@
 .studentignore
 .course-config
 .course-config.example
+students.txt
+students.txt.example
 CLAUDE.md
 TEMPLATE_SETUP.md
 

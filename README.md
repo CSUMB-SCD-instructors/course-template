@@ -19,6 +19,7 @@ This repository serves as a template for creating new course repositories with a
 - `syllabus.md` - Course syllabus (automatically published to centralized syllabi site)
 - `syllabus-online.md` - Optional online course syllabus variant
 - `calendar.md` - Course calendar (optional, or use CALENDAR_URL in .course-config)
+- `students.txt` - Student email addresses for team management (see `students.txt.example`)
 - `.course-config` - Course configuration variables (see `.course-config.example`)
 - `.course-config.example` - Template showing required configuration format
 - `.course-config-online` - Optional online course configuration
@@ -244,6 +245,35 @@ CST334-operating-systems/
   └── publish_to_students.sh     # Excluded from student repos
   ```
 - For course-specific grading documentation, see individual course repositories
+
+### Managing Student Repository Access
+
+Use `scripts/manage_student_team.sh` to create GitHub teams and grant students read-only access:
+
+```bash
+# Create team and add students for fall 2025
+./scripts/manage_student_team.sh --students students.txt --term fall2025
+
+# For online course
+./scripts/manage_student_team.sh --online --students students.txt --term fall2025
+
+# Add more students to existing team
+./scripts/manage_student_team.sh --students new_students.txt --term fall2025 --action add
+
+# Remove students from team
+./scripts/manage_student_team.sh --students removed_students.txt --term fall2025 --action remove
+```
+
+**Student file format** (`students.txt`):
+```
+student1@csumb.edu
+student2@csumb.edu
+student3@csumb.edu
+```
+
+**Team naming:** Creates teams like `CST334-students-fall2025` with read-only access to the student repository.
+
+**Requirements:** GitHub CLI (`gh`) must be installed and authenticated: `gh auth login`
 
 ### Sharing Slides with Students
 Use `scripts/strip_pptx_notes.py` to remove instructor notes from PowerPoint files:

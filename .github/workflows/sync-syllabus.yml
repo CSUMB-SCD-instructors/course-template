@@ -5,8 +5,10 @@ on:
     branches: [main]
     paths:
       - 'syllabus.md'
+      - 'syllabus-online.md'
       - 'calendar.md'
       - '.course-config'
+      - '.course-config-online'
 
 jobs:
   sync-syllabus:
@@ -113,7 +115,62 @@ jobs:
         fi
 
         echo "Syllabus and calendar copied to _active directory for ${COURSE_CODE}"
-        
+
+        # Check if online course configuration exists
+        if [ -f .course-config-online ]; then
+          echo "Found .course-config-online, processing online syllabus..."
+
+          # Load online course configuration
+          source .course-config-online
+
+          # Use COURSE_CODE from online config, or append -online to main COURSE_CODE
+          ONLINE_COURSE_CODE="${COURSE_CODE}-online"
+
+          # Determine online calendar link
+          online_calendar_link=""
+          if [ -n "${CALENDAR_URL}" ]; then
+            online_calendar_link="${CALENDAR_URL}"
+          elif [ -f calendar.md ]; then
+            online_calendar_link="/${ONLINE_COURSE_CODE}-calendar.html"
+          fi
+
+          # Copy online syllabus if it exists
+          if [ -f syllabus-online.md ]; then
+            echo "---" > "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            echo "layout: default" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            echo "course_code: \"${ONLINE_COURSE_CODE}\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            echo "course_name: \"${COURSE_NAME}\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            echo "title: \"${ONLINE_COURSE_CODE} - ${COURSE_NAME}\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            if [ -n "$online_calendar_link" ]; then
+              echo "course_calendar: \"${online_calendar_link}\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            fi
+            echo "last_updated: $(date +%Y-%m-%d)" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            echo "---" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+            echo "" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+
+            # Copy online syllabus content
+            sed "s/syllabus-online\.md/${ONLINE_COURSE_CODE}-syllabus.html/g; s/syllabus\.md/${ONLINE_COURSE_CODE}-syllabus.html/g; s/calendar\.md/${ONLINE_COURSE_CODE}-calendar.html/g" syllabus-online.md >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-syllabus.md"
+
+            echo "Online syllabus copied for ${ONLINE_COURSE_CODE}"
+          else
+            echo "Warning: .course-config-online exists but syllabus-online.md not found"
+          fi
+
+          # Handle online calendar if using local file
+          if [ -f calendar.md ]; then
+            echo "---" > "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "layout: default" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "course_code: \"${ONLINE_COURSE_CODE}\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "course_name: \"${COURSE_NAME}\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "title: \"${ONLINE_COURSE_CODE} Course Calendar\"" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "last_updated: $(date +%Y-%m-%d)" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "---" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "" >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            cat calendar.md >> "syllabi-repo/_active/${ONLINE_COURSE_CODE}-calendar.md"
+            echo "Calendar copied for ${ONLINE_COURSE_CODE}"
+          fi
+        fi
+
 
     - name: Commit and push changes
       if: env.SYLLABI_SYNC_TOKEN != ''
@@ -135,6 +192,14 @@ jobs:
         git add "_active/${COURSE_CODE}-syllabus.md"
         if [ -f "_active/${COURSE_CODE}-calendar.md" ]; then
           git add "_active/${COURSE_CODE}-calendar.md"
+        fi
+
+        # Add online course files if they exist
+        if [ -f "_active/${COURSE_CODE}-online-syllabus.md" ]; then
+          git add "_active/${COURSE_CODE}-online-syllabus.md"
+        fi
+        if [ -f "_active/${COURSE_CODE}-online-calendar.md" ]; then
+          git add "_active/${COURSE_CODE}-online-calendar.md"
         fi
         
         # Check if there are changes to commit

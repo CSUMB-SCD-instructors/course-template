@@ -224,6 +224,9 @@ else
 fi
 
 # Copy current state from redacted branch
+# First, remove all tracked files to ensure deletions are reflected
+git rm -rf . 2>/dev/null || true
+# Then copy everything fresh from source branch
 git checkout ${SOURCE_BRANCH} -- .
 
 # Apply syllabus mapping if configured

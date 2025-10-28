@@ -53,6 +53,7 @@ The `scripts/publish_to_students.sh` script enables controlled distribution of c
 3. **Publication**: Run `./scripts/publish_to_students.sh` to publish to student repository
 
 **Key capabilities:**
+- Automatically creates student repository as private if it doesn't exist (requires `gh` CLI)
 - Uses `.studentignore` to exclude instructor-only content (scripts, solutions, etc.)
 - Creates clean, squashed commits for student repositories
 - Supports tagging releases (defaults to `YYYY-wWW` format)
@@ -137,6 +138,9 @@ git push -u origin redacted_for_students
 
 # Configure student repository URL in .course-config
 # STUDENT_REPO_URL defaults to https://github.com/CSUMB-SCD-instructors/${COURSE_CODE}.git
+
+# Note: The student repository will be automatically created as private on first publication
+# if it doesn't exist (requires gh CLI authentication)
 ```
 
 ### 5. Online Course Setup (Optional)

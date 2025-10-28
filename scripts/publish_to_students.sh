@@ -184,6 +184,32 @@ else
     git remote set-url ${STUDENT_REMOTE_NAME} ${STUDENT_REPO_URL}
 fi
 
+# Check if repository exists and offer to create it if not
+echo -e "${YELLOW}Checking if student repository exists...${NC}"
+if ! gh repo view ${STUDENT_REPO_URL} >/dev/null 2>&1; then
+    echo -e "${YELLOW}Repository does not exist: ${STUDENT_REPO_URL}${NC}"
+    read -p "Would you like to create this repository now? (y/N): " -r
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Creating private repository...${NC}"
+
+        # Extract org/repo from URL
+        REPO_PATH=$(echo ${STUDENT_REPO_URL} | sed -E 's|https://github.com/([^/]+/[^/]+)(\.git)?|\1|')
+
+        # Create the repository with gh CLI
+        if gh repo create ${REPO_PATH} --private --description "${COURSE_NAME} - Student Repository"; then
+            echo -e "${GREEN}Repository created successfully!${NC}"
+        else
+            echo -e "${RED}Error: Failed to create repository${NC}"
+            echo -e "${RED}Please create the repository manually and try again${NC}"
+            exit 1
+        fi
+    else
+        echo -e "${RED}Error: Repository does not exist and creation was declined${NC}"
+        echo -e "${RED}Please create the repository manually at: ${STUDENT_REPO_URL}${NC}"
+        exit 1
+    fi
+fi
+
 # Fetch the student repository to check its current state
 echo -e "${YELLOW}Fetching from student repository...${NC}"
 git fetch ${STUDENT_REMOTE_NAME} || {

@@ -36,6 +36,6 @@ If you need other flags, I will try to make it possible to pass these in as well
 
 ## Formatting
 
-Note that not all unit tests do a great job formatting their output -- I had to make a bridge script to fix json output.  
-This is why I strongly recommend using `pyyaml` as your output approach whenever possible.  
-Strictly speaking I think that json would work, too, but am personally moving away from it. 
+Note that not all unit tests do a great job formatting their output -- I had to make a bridge script to fix json output.
+Prefer YAML for repo-owned config and generated output whenever possible.
+Use JSON only when an external tool requires it.

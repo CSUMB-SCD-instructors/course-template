@@ -1,78 +1,36 @@
-# Template Setup Guide
+# Maintaining the Course Copier Template
 
-## For Template Maintainers
-
-### Updating the Template
-When making improvements to course structure or workflows:
-
-1. **Make changes in the template repository**
-2. **Test changes** with a sample course
-3. **Update version/changelog** if significant changes
-4. **Notify faculty** of available updates
-
-### Syncing Changes to Existing Courses
-Faculty can pull template improvements:
+This repository is a Copier template, not merely a GitHub snapshot template.
+New courses should be created with:
 
 ```bash
-# Add template as remote (one-time setup)
-git remote add template https://github.com/your-org/course-template
-
-# Sync specific improvements
-git fetch template
-git cherry-pick <commit-hash>
-
-# Or merge all changes (use carefully)
-git merge template/main --allow-unrelated-histories
+copier copy /path/to/course-template /path/to/new-course
 ```
 
-## For Faculty Using Template
+Copier writes `.copier-answers.yml` to each generated course. That tracked file
+records the template source and answers so the course can later run
+`copier update` from a clean worktree.
 
-### Initial Setup
-1. **Create repository from template**
-2. **Update `.course-config`**:
-   ```bash
-   COURSE_CODE=CST123
-   COURSE_NAME="Your Course Name"  
-   CALENDAR_URL="https://your-calendar-url"  # Optional
-   ```
-3. **Customize `syllabus.md`** with course details
-4. **Commit changes** to trigger first syllabus sync
+## Template Boundaries
 
-### Adding Content
-- **Programming Assignments**: Add to `programming-assignments/PAX/`
-- **Labs**: Add to `labs/labX-name/`
-- **Demos**: Add to `demos/demoX-topic/`
+Keep reusable Python framework code in `scripts/management/`, the management
+entry point, the grading starter contract, common workflows, and the generic
+course skeleton here. Keep course-specific assignments, roster contents,
+syllabus prose, and target-specific URLs in each generated course.
 
-### Calendar Options
-- **Google Sheets**: Set `CALENDAR_URL` in `.course-config`
-- **Local file**: Create `calendar.md` in repository root
-- **No calendar**: Leave `CALENDAR_URL` empty and don't create `calendar.md`
+Files ending in `.jinja` are rendered by Copier. Runtime Jinja files such as
+`syllabus.md.j2` deliberately do not use that suffix, so Copier copies them
+unchanged for `scripts/manage_course.py` to render later.
 
-## Organization Setup
+## Adding the Framework to an Existing Course
 
-### Required Secrets
-Set up once at organization level:
-- `SYLLABI_SYNC_TOKEN`: Personal access token with repo permissions to syllabi repository
+Copier preserves an existing `pyproject.toml`, `uv.lock`, `.python-version`,
+and `.envrc` instead of overwriting the course's runtime setup. When Copier asks whether it is adopting an existing course, answer yes. It
+preserves the existing `pyproject.toml` and includes this one-time helper:
 
-### Repository Structure
-```
-organization/
-├── course-template/          # This template
-├── syllabi/                 # Centralized syllabi publishing
-├── CST334-golden/           # Individual course repos
-├── CST201-algorithms/
-└── CST237-intro-cs/
+```bash
+bash scripts/add_course_management_dependencies.sh
 ```
 
-## Troubleshooting
-
-### Syllabus Not Syncing
-1. Check GitHub Actions logs
-2. Verify `.course-config` format
-3. Ensure organization secrets are properly configured
-4. Check syllabi repository permissions
-
-### Template Updates Not Working
-1. Verify template remote is configured
-2. Check for merge conflicts
-3. Consider manual file updates for complex changes
+The helper delegates TOML edits and lockfile updates to `uv add`, adding only
+the `course-management` optional dependency extra.

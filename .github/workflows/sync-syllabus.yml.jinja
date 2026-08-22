@@ -1,0 +1,57 @@
+name: Sync Syllabus to Syllabi Repository
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - syllabus.md.j2
+      - calendar.md
+      - course-config.yaml
+      - scripts/manage_course.py
+      - scripts/management/**
+      - pyproject.toml
+      - uv.lock
+      - .github/workflows/sync-syllabus.yml
+  workflow_dispatch:
+
+jobs:
+  sync-syllabus:
+    runs-on: ubuntu-latest
+    env:
+      SYLLABI_SYNC_TOKEN: {{ '${{ secrets.SYLLABI_SYNC_TOKEN }}' }}
+
+    steps:
+      - name: Check for sync token
+        if: env.SYLLABI_SYNC_TOKEN == ''
+        run: |
+          echo "::warning::SYLLABI_SYNC_TOKEN secret not found. Skipping syllabus sync."
+
+      - name: Checkout source repository
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install course-management dependencies
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        run: python -m pip install ".[course-management]"
+
+      - name: Checkout syllabi repository
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          repository: {{ syllabi_org }}/syllabi
+          token: {{ '${{ secrets.SYLLABI_SYNC_TOKEN }}' }}
+          path: syllabi-repo
+
+      - name: Render, commit, and push syllabus updates
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        run: |
+          python scripts/manage_course.py sync-syllabus \
+            --destination syllabi-repo \
+            --target {{ cohort_slug }} \
+            --commit-message "Update syllabus from ${GITHUB_SHA::7}"

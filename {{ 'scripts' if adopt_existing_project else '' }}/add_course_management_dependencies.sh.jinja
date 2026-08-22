@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Add the reusable course-management runtime dependencies to an existing course.
+# This intentionally delegates TOML edits and lockfile updates to uv.
+set -euo pipefail
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "Error: uv is required. Install it first: https://docs.astral.sh/uv/" >&2
+  exit 1
+fi
+
+if [[ ! -f pyproject.toml ]]; then
+  echo "Error: run this command from a course repository containing pyproject.toml." >&2
+  exit 1
+fi
+
+uv add --optional course-management \
+  "colorama>=0.4.6" \
+  "pyyaml>=6.0.2" \
+  "jinja2>=3.1.6" \
+  "gitpython>=3.1.51" \
+  "pygithub>=2.9.1"
+
+echo "Added the course-management extra."
+echo "Use: uv sync --extra course-management"

@@ -1,0 +1,60 @@
+# YAML is the canonical configuration format for this course.
+defaults:
+  source_branch: main
+  github_org: {{ github_org | tojson }}
+  on_machine_repo_directory: {{ course_code | tojson }}
+  render_exclude_dirs:
+    - slides
+  render_paths:
+    - syllabus.md.j2
+    - scripts/update_from_base.sh.j2
+  publish:
+    # Empty include means "start from everything". This template uses an
+    # explicit student-facing allowlist instead.
+    include:
+      - README.md
+      - syllabus.md
+      - programming-assignments/**
+      - labs/**
+      - demos/**
+      - scripts/grader.py
+      - scripts/update_from_base.sh
+      - slides/out
+    exclude:
+      # Copier metadata is required in the instructor repository, never students.
+      - .copier-answers.yml
+      - "**/bin/**"
+      - "**/debug"
+      - "**/unit_tests"
+      - "**/*.o"
+      - "**/*.complete.c"
+      - "**/completed/**"
+      - "**/solution/**"
+      - "**/.idea/**"
+    # Add only explicit redactions for files that this course must withhold.
+    redact: []
+  student_repositories:
+    # Names are generated as <course_code>-<cohort_slug>-base and
+    # <course_code>-<cohort_slug>-<student_email_local_part>.
+    base_branch: base
+    base_index_branch: main
+
+modes:
+  {{ course_mode }}:
+    course_code: {{ course_code | tojson }}
+    course_name: {{ course_name | tojson }}
+    published_course_code: {% if course_mode == "online" %}{{ (course_code ~ "-online") | tojson }}{% else %}{{ course_code | tojson }}{% endif %}
+    canvas_url: ""
+    slack_channel_url: ""
+    forbidden_strings: []
+    # GitHub usernames or email addresses for course staff. Staff receive
+    # Maintain access to every private per-student repository for this cohort.
+    staff: []
+
+targets:
+  {{ cohort_slug }}:
+    mode: {{ course_mode }}
+    cohort_slug: {{ cohort_slug }}
+    student_list: student_lists/students.{{ cohort_slug }}.txt
+    # Optional legacy shared-repository workflow setting:
+    # student_repo_url: https://github.com/OWNER/{{ course_code }}.git

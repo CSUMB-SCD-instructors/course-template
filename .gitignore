@@ -43,3 +43,4 @@ coverage/
 # Course-specific (you may want to ignore)
 # grades/
 # solutions/
+.venv/

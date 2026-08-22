@@ -1,0 +1,36 @@
+# {{ course_code }} — {{ course_name }}
+
+This course repository was generated from the course Copier template. It keeps
+course content here and uses the shared Python framework for publication,
+student repositories, grading, and syllabus synchronization.
+
+## Initial Setup
+
+1. Review `course-config.yaml`, especially Canvas/Slack URLs and the first cohort.
+2. Add student emails to `student_lists/students.{{ cohort_slug }}.txt`.
+3. Replace the starter text in `syllabus.md.j2` with this course's syllabus.
+4. Add assignments, labs, and demos in their corresponding directories.
+5. Install the management tools with `uv sync --extra course-management`.
+
+## Course Management
+
+```bash
+python scripts/manage_course.py --help
+python scripts/manage_course.py publish-base --target {{ cohort_slug }}
+python scripts/manage_course.py provision-student-repos --target {{ cohort_slug }}
+```
+
+`publish-base` creates or updates the safe cohort base. Students update their
+own work with the generated `scripts/update_from_base.sh` script after a new
+base release. See `scripts/management/README.md` for all commands.
+
+## Updating the Framework
+
+Copier records this course's template answers in `.copier-answers.yml`. Commit
+that file. To apply a later template revision from a clean working tree:
+
+```bash
+copier update
+```
+
+Review and resolve any conflicts before committing the update.

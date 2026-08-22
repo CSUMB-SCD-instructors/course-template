@@ -1,0 +1,56 @@
+_min_copier_version: "9.0.0"
+_templates_suffix: ".jinja"
+_exclude:
+  - ".git"
+  - ".DS_Store"
+  - "__pycache__"
+  - "*.pyc"
+  - "copier.yml"
+  - "TEMPLATE_SETUP.md"
+  - "tests"
+_skip_if_exists:
+  # Existing courses own their Python/runtime setup and lockfile.
+  - "pyproject.toml"
+  - "uv.lock"
+  - ".python-version"
+  - ".envrc"
+
+course_code:
+  type: str
+  help: "Course code, for example CST334"
+
+course_name:
+  type: str
+  help: "Full course name"
+
+course_mode:
+  type: str
+  help: "Mode for the first cohort"
+  choices:
+    - in-person
+    - online
+  default: in-person
+
+cohort_slug:
+  type: str
+  help: "First cohort target/slug, for example fall2026 or fall2026online"
+
+github_org:
+  type: str
+  help: "GitHub organization for per-student repositories"
+  default: CSUMB-SCD-assignments
+
+syllabi_org:
+  type: str
+  help: "GitHub organization that owns the central syllabi repository"
+  default: CSUMB-SCD-instructors
+
+project_name:
+  type: str
+  help: "Python project name for a new course"
+  default: "{{ course_code | lower }}"
+
+adopt_existing_project:
+  type: bool
+  help: "Is this being copied into an existing course repository with its own pyproject.toml?"
+  default: false

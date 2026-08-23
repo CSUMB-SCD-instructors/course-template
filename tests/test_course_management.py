@@ -312,6 +312,26 @@ def test_student_invitation_permission_error_includes_auth_guidance(monkeypatch:
     _invite_email_to_team(Organization(), Team(), "student@example.edu")
 
 
+def test_student_invitation_reports_when_invitation_already_exists(
+  monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  class Organization:
+    pass
+
+  class Team:
+    id = 123
+
+  def existing_invitation(*args: object) -> None:
+    raise GithubException(422, {"message": "Invitee is already a member"})
+
+  monkeypatch.setattr(
+    "scripts.management.student_repositories.invite_by_email",
+    existing_invitation,
+  )
+
+  assert not _invite_email_to_team(Organization(), Team(), "student@example.edu")
+
+
 def test_base_index_readme_links_to_sorted_student_repositories() -> None:
   settings = {
     "course_code": "CST334",

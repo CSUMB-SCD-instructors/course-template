@@ -156,15 +156,21 @@ def _get_or_create_team(org: Any, name: str, description: str) -> tuple[Any, boo
     return org.create_team(name=name, privacy="closed", description=description), True
 
 
-def _invite_email_to_team(org: Any, team: Any, email: str) -> None:
+def _invite_email_to_team(org: Any, team: Any, email: str) -> bool:
+  """Invite an email address, returning whether GitHub created an invitation.
+
+  GitHub does not distinguish an existing member from an outstanding invitation
+  in this endpoint's 422 response, so callers can only report those together.
+  """
   try:
     invite_by_email(org, email, team.id)
+    return True
   except GithubException as exc:
     # GitHub returns an error when the student is already invited or a member.
     # Those states are both acceptable for repeatable provisioning.
     status = getattr(exc, "status", None)
     if status == 422:  # pragma: no cover - GitHub response
-      return
+      return False
     if status == 403:
       org_name = getattr(org, "login", "the organization")
       raise ConfigError(
@@ -425,9 +431,11 @@ def provision_student_repositories(
   for member in staff:
     _add_staff_member(gh, org, staff_team, member)
 
+  newly_invited: list[str] = []
+  already_invited_or_members: list[str] = []
   for student in students:
     info(f"Provisioning {student.repository_name}")
-    _invite_email_to_team(org, cohort_team, student.email)
+    base_invitation_created = _invite_email_to_team(org, cohort_team, student.email)
     student_repo, _ = _get_or_create_repo(
       org,
       student.repository_name,
@@ -438,7 +446,11 @@ def provision_student_repositories(
       f"{student.repository_name}:student",
       f"Write access to {student.repository_name}",
     )
-    _invite_email_to_team(org, student_team, student.email)
+    repository_invitation_created = _invite_email_to_team(org, student_team, student.email)
+    if base_invitation_created or repository_invitation_created:
+      newly_invited.append(student.email)
+    else:
+      already_invited_or_members.append(student.email)
     student_team.set_repo_permission(student_repo, "push")
     staff_team.set_repo_permission(student_repo, "maintain")
 
@@ -459,6 +471,17 @@ def provision_student_repositories(
 
   _write_base_index(base_url, settings, students)
   base_repo.edit(default_branch=settings["index_branch"])
+  print("Invitation update:")
+  if newly_invited:
+    print("  New organization invitation sent:")
+    for email in newly_invited:
+      print(f"    - {email}")
+  else:
+    print("  No new organization invitations sent.")
+  if already_invited_or_members:
+    print("  No new invitation (already a member or invitation pending):")
+    for email in already_invited_or_members:
+      print(f"    - {email}")
   success("Student repository provisioning complete.")
   return 0
 

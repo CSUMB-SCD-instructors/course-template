@@ -44,3 +44,4 @@ coverage/
 # grades/
 # solutions/
 .venv/
+__pycache__/

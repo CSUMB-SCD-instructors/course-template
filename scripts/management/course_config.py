@@ -7,6 +7,7 @@ import fnmatch
 import json
 import os
 import re
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -514,6 +515,7 @@ def render_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
     output_path = path.with_suffix("") if path.name.endswith(".j2") else path
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(rendered, encoding="utf-8")
+    output_path.chmod(stat.S_IMODE(path.stat().st_mode))
     rendered_files.append(output_path)
 
   for path in rendered_files:

@@ -38,6 +38,9 @@ defaults:
     # <course_code>-<cohort_slug>-<student_email_local_part>.
     base_branch: base
     base_index_branch: main
+    # Keep this private. It derives the stable STUDENT_TOKEN committed to each
+    # student's private repository; use a long random value, not a guessable salt.
+    token_secret: "CHANGE_ME"
 
 modes:
   {{ course_mode }}:

@@ -35,3 +35,16 @@ python scripts/manage_course.py publish-repo --target <cohort>
 ```
 
 Use `--dry-run` where a command provides it before operating on a new cohort.
+
+## Student usage tokens
+
+`provision-student-repos` creates a root `.env` file in each newly initialized
+private student repository containing `STUDENT_TOKEN`. Before provisioning, set
+`student_repositories.token_secret` in `course-config.yaml` to a private,
+non-placeholder value (for example, generate one with `openssl rand -hex 32`).
+The configuration file is not part of the student publication surface.
+
+Tokens are stable HMAC-SHA-256 values scoped to the course, cohort, and
+normalized student email. A checking server can use the same secret and roster
+to reproduce expected values. Do not print the secret or tokens in logs, and do
+not use a short or public salt such as `42`.

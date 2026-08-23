@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
+import hmac
 import re
 import tempfile
 from dataclasses import dataclass
@@ -33,6 +35,54 @@ class StudentRepository:
   email: str
   slug: str
   repository_name: str
+
+
+TOKEN_SECRET_PLACEHOLDERS = {
+  "",
+  "change-me",
+  "change_me",
+  "changeme",
+  "replace-me",
+  "replace_me",
+}
+
+
+def normalized_student_email(email: str) -> str:
+  """Return the canonical email form used for repository tokens."""
+  normalized = email.strip().casefold()
+  if not normalized or "@" not in normalized:
+    raise ConfigError(f"Invalid student email for token generation: {email!r}")
+  return normalized
+
+
+def student_token_secret(resolved: dict[str, Any]) -> str:
+  student_repositories_cfg = resolved.get("student_repositories")
+  if not isinstance(student_repositories_cfg, dict):
+    raise ConfigError("student_repositories must be configured")
+
+  secret = student_repositories_cfg.get("token_secret")
+  if not isinstance(secret, str) or secret.strip().casefold() in TOKEN_SECRET_PLACEHOLDERS:
+    raise ConfigError(
+      "student_repositories.token_secret must be a non-empty private course secret"
+    )
+  return secret
+
+
+def student_token(resolved: dict[str, Any], email: str) -> str:
+  """Derive a stable token that the course server can reproduce from its roster."""
+  secret = student_token_secret(resolved)
+  settings = repository_settings(resolved)
+  message = "\x1f".join((
+    "course-student-token-v1",
+    settings["course_code"],
+    settings["cohort_slug"],
+    normalized_student_email(email),
+  ))
+  return hmac.new(
+    secret.encode("utf-8"),
+    message.encode("utf-8"),
+    hashlib.sha256,
+  ).hexdigest()
 
 
 def student_slug(email: str) -> str:
@@ -112,8 +162,18 @@ def _invite_email_to_team(org: Any, team: Any, email: str) -> None:
   except GithubException as exc:
     # GitHub returns an error when the student is already invited or a member.
     # Those states are both acceptable for repeatable provisioning.
-    if getattr(exc, "status", None) not in {422}:  # pragma: no cover - GitHub response
-      raise
+    status = getattr(exc, "status", None)
+    if status == 422:  # pragma: no cover - GitHub response
+      return
+    if status == 403:
+      org_name = getattr(org, "login", "the organization")
+      raise ConfigError(
+        f"Could not invite {email} to {org_name}. GitHub requires the authenticated "
+        "account to be an organization owner and authorized to create organization "
+        "invitations. Check `gh auth status`; GitHub CLI tokens typically need "
+        "`gh auth refresh -h github.com -s admin:org`."
+      ) from exc
+    raise
 
 
 def _add_staff_member(gh: Any, org: Any, team: Any, member: str) -> None:
@@ -289,6 +349,27 @@ def _write_base_index(
     repo.git.push("--force", base_url, f"{settings['index_branch']}:{settings['index_branch']}")
 
 
+def _initialize_student_repository(
+  base_url: str,
+  base_branch: str,
+  student_repo_url: str,
+  token: str,
+) -> None:
+  """Create a student's main branch from the base and add its private token."""
+  with tempfile.TemporaryDirectory(prefix="course-student-repo-") as raw_tempdir:
+    base_clone = Repo.clone_from(base_url, raw_tempdir, branch=base_branch)
+    root = Path(base_clone.working_tree_dir or raw_tempdir)
+    (root / ".env").write_text(f"STUDENT_TOKEN={token}\n", encoding="utf-8")
+    base_clone.git.add(".env")
+    actor = Actor("Course management", "course-management@example.invalid")
+    base_clone.index.commit(
+      "Add student usage token",
+      author=actor,
+      committer=actor,
+    )
+    base_clone.git.push(student_repo_url, f"{base_branch}:main")
+
+
 def provision_student_repositories(
   config: dict[str, Any],
   target: str,
@@ -302,6 +383,8 @@ def provision_student_repositories(
     raise ConfigError(f"Target '{target}' must define student_list before provisioning")
   emails = read_student_emails(Path(student_list))
   students = student_repositories(resolved, emails)
+  # Validate the shared secret before prompting or creating GitHub resources.
+  student_token_secret(resolved)
   staff = staff_members(resolved)
   staff_team_name = f"{settings['course_code']}:{settings['cohort_slug']}:staff"
 
@@ -366,9 +449,12 @@ def provision_student_repositories(
       initialized = False
 
     if not initialized:
-      with tempfile.TemporaryDirectory(prefix="course-student-repo-") as raw_tempdir:
-        base_clone = Repo.clone_from(base_url, raw_tempdir, branch=settings["base_branch"])
-        base_clone.git.push(student_repo.clone_url, f"{settings['base_branch']}:main")
+      _initialize_student_repository(
+        base_url,
+        settings["base_branch"],
+        student_repo.clone_url,
+        student_token(resolved, student.email),
+      )
       student_repo.edit(default_branch="main")
 
   _write_base_index(base_url, settings, students)

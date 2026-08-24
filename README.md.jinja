@@ -34,3 +34,16 @@ copier update
 ```
 
 Review and resolve any conflicts before committing the update.
+
+## Docker Images
+
+Build an image from `docker/Dockerfile` with an explicit registry tag:
+
+```bash
+./scripts/build_docker.sh --image ghcr.io/OWNER/{{ course_code | lower }}:latest
+```
+
+The helper supports ordinary Dockerfiles by default. For a multi-stage
+Dockerfile, add `--target <stage>`. To test one platform locally without
+pushing, use `--platforms linux/arm64 --no-push --load` (choose the platform
+for your machine).

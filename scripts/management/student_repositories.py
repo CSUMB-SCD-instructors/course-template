@@ -22,6 +22,7 @@ from .course_config import (
   load_config,
   prune_tree,
   redact_tree,
+  render_student_repository_tree,
   render_tree,
   resolve_target,
 )
@@ -197,7 +198,7 @@ def _add_staff_member(gh: Any, org: Any, team: Any, member: str) -> None:
 
 
 def _build_publication_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
-  render_tree(root, config, target)
+  render_tree(root, config, target, defer_student_repo_url=True)
   remove_template_sources(root)
   prune_tree(root, config, target)
   redacted = redact_tree(root, config, target)
@@ -360,11 +361,14 @@ def _initialize_student_repository(
   base_branch: str,
   student_repo_url: str,
   token: str,
+  config: dict[str, Any],
+  target: str,
 ) -> None:
   """Create a student's main branch from the base and add its private token."""
   with tempfile.TemporaryDirectory(prefix="course-student-repo-") as raw_tempdir:
     base_clone = Repo.clone_from(base_url, raw_tempdir, branch=base_branch)
     root = Path(base_clone.working_tree_dir or raw_tempdir)
+    render_student_repository_tree(root, config, target, student_repo_url)
     (root / ".env").write_text(f"STUDENT_TOKEN={token}\n", encoding="utf-8")
     base_clone.git.add(".env")
     actor = Actor("Course management", "course-management@example.invalid")
@@ -466,6 +470,8 @@ def provision_student_repositories(
         settings["base_branch"],
         student_repo.clone_url,
         student_token(resolved, student.email),
+        config,
+        target,
       )
       student_repo.edit(default_branch="main")
 

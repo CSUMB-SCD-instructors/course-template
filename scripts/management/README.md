@@ -36,6 +36,14 @@ python scripts/manage_course.py publish-repo --target <cohort>
 
 Use `--dry-run` where a command provides it before operating on a new cohort.
 
+## Per-student repository URLs in templates
+
+In files rendered by `publish-base`, a plain `{{ student_repo_url }}` is
+intentionally deferred. It remains a placeholder in the shared base, then
+`provision-student-repos` replaces it with the URL of each student's private
+repository before its first commit. Do not apply filters or other Jinja
+expressions to this deferred value.
+
 ## Student usage tokens
 
 `provision-student-repos` creates a root `.env` file in each newly initialized

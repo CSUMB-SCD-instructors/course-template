@@ -9,6 +9,7 @@ from github.GithubException import GithubException
 from scripts.management.course_config import (
   ConfigError,
   prune_tree,
+  render_student_repository_tree,
   render_template,
   render_tree,
   resolve_target,
@@ -285,6 +286,8 @@ def test_student_repository_initialization_commits_root_env_file(tmp_path: Path)
     "base",
     student_remote.as_posix(),
     "test-token",
+    {"targets": {"test": {}}},
+    "test",
   )
 
   clone_root = tmp_path / "student-clone"
@@ -411,6 +414,29 @@ def test_render_tree_supports_recursive_render_path_globs(tmp_path: Path) -> Non
     "labs/lab1/README.md",
   ]
   assert (lab_dir / "README.md").read_text(encoding="utf-8") == "# Lab: Operating Systems\n"
+
+
+def test_student_repository_url_is_deferred_until_provisioning(tmp_path: Path) -> None:
+  template_path = tmp_path / "README.md.j2"
+  template_path.write_text("Clone {{ student_repo_url }}\n", encoding="utf-8")
+  config = {
+    "defaults": {"render_paths": ["README.md.j2"]},
+    "targets": {"fall2026": {}},
+  }
+
+  render_tree(tmp_path, config, "fall2026", defer_student_repo_url=True)
+
+  readme_path = tmp_path / "README.md"
+  assert readme_path.read_text(encoding="utf-8") == "Clone {{ student_repo_url }}\n"
+  render_student_repository_tree(
+    tmp_path,
+    config,
+    "fall2026",
+    "https://github.com/example-org/CST334-fall2026-student.git",
+  )
+  assert readme_path.read_text(encoding="utf-8") == (
+    "Clone https://github.com/example-org/CST334-fall2026-student.git\n"
+  )
 
 
 def test_student_can_merge_a_new_base_release_without_rewriting_work(tmp_path: Path) -> None:

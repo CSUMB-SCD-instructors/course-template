@@ -468,9 +468,15 @@ def validate_rendered_content(
   rel_path: str,
   content: str,
   forbidden_strings: list[str],
+  *,
+  allow_deferred_student_repo_url: bool = False,
 ) -> None:
-  unresolved = re.search(r"({{.*?}}|{%.+?%})", content, re.S)
-  if unresolved:
+  unresolved = re.findall(r"({{.*?}}|{%.+?%})", content, re.S)
+  allowed_deferred_expression = re.compile(r"{{\s*student_repo_url\s*}}")
+  if unresolved and not (
+    allow_deferred_student_repo_url
+    and all(allowed_deferred_expression.fullmatch(expression) for expression in unresolved)
+  ):
     raise TemplateError(f"Unresolved template syntax remains in {rel_path}")
   for forbidden in forbidden_strings:
     if forbidden and forbidden in content:
@@ -479,8 +485,18 @@ def validate_rendered_content(
       )
 
 
-def render_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
+def render_tree(
+  root: Path,
+  config: dict[str, Any],
+  target: str,
+  *,
+  defer_student_repo_url: bool = False,
+) -> list[Path]:
   resolved = resolve_target(config, target)
+  if defer_student_repo_url:
+    # The cohort base is shared by all students. Keep this one expression for
+    # the per-student provisioning pass, when the repository URL is known.
+    resolved["student_repo_url"] = "{{ student_repo_url }}"
   patterns = list(resolved.get("render_paths", []))
   exclude_dirs = list(resolved.get("render_exclude_dirs", []))
   forbidden_strings = list(resolved.get("forbidden_strings", []))
@@ -529,11 +545,54 @@ def render_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
   for path in rendered_files:
     rel_path = path.relative_to(root).as_posix()
     content = path.read_text(encoding="utf-8")
-    validate_rendered_content(rel_path, content, forbidden_strings)
+    validate_rendered_content(
+      rel_path,
+      content,
+      forbidden_strings,
+      allow_deferred_student_repo_url=defer_student_repo_url,
+    )
 
   missing_patterns = sorted(set(patterns) - matched_patterns)
   if missing_patterns:
     raise TemplateError(
       "No files matched the configured render paths: " + ", ".join(missing_patterns)
     )
+  return rendered_files
+
+
+def render_student_repository_tree(
+  root: Path,
+  config: dict[str, Any],
+  target: str,
+  student_repo_url: str,
+) -> list[Path]:
+  """Resolve deferred student repository URLs in a private repository copy."""
+  resolved = resolve_target(config, target)
+  resolved["student_repo_url"] = student_repo_url
+  forbidden_strings = list(resolved.get("forbidden_strings", []))
+  env = Environment(
+    loader=FileSystemLoader(str(root)),
+    undefined=StrictUndefined,
+    autoescape=False,
+    trim_blocks=False,
+    lstrip_blocks=False,
+    keep_trailing_newline=True,
+  )
+  rendered_files: list[Path] = []
+
+  for path in root.rglob("*"):
+    if not path.is_file():
+      continue
+    rel_path = path.relative_to(root).as_posix()
+    if _is_git_internal(rel_path):
+      continue
+    content = path.read_text(encoding="utf-8")
+    if "{{ student_repo_url" not in content:
+      continue
+    rendered = render_template(root, rel_path, resolved, env)
+    path.write_text(rendered, encoding="utf-8")
+    path.chmod(stat.S_IMODE(path.stat().st_mode))
+    validate_rendered_content(rel_path, rendered, forbidden_strings)
+    rendered_files.append(path)
+
   return rendered_files

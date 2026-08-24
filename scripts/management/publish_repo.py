@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import argparse
 import datetime
-import fnmatch
 from collections import Counter
 from pathlib import Path
 
@@ -37,13 +36,11 @@ def remove_template_sources(root: Path) -> list[Path]:
 
 
 def _matching_render_files(root: Path, render_patterns: list[str]) -> list[str]:
-  matches: list[str] = []
-  for path in root.rglob("*"):
-    if not path.is_file():
-      continue
-    rel_path = path.relative_to(root).as_posix()
-    if any(fnmatch.fnmatch(rel_path, pattern) for pattern in render_patterns):
-      matches.append(rel_path)
+  matches: set[str] = set()
+  for pattern in render_patterns:
+    for path in root.glob(pattern):
+      if path.is_file():
+        matches.add(path.relative_to(root).as_posix())
   return sorted(matches)
 
 

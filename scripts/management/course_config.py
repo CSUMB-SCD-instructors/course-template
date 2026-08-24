@@ -110,13 +110,19 @@ def resolve_target_choice(args: Any) -> str:
 
 
 def should_render(rel_path: str, patterns: list[str], exclude_dirs: list[str]) -> bool:
+  """Return whether a selected render path is outside excluded directories.
+
+  ``render_tree`` selects files with ``Path.glob`` so it can support recursive
+  glob patterns correctly; ``patterns`` is retained for this helper's public
+  signature.
+  """
   normalized = rel_path.replace(os.sep, "/")
   for excluded in exclude_dirs:
     excluded_normalized = _normalize_pattern(excluded).rstrip("/")
     prefix = excluded_normalized + "/"
     if normalized == excluded_normalized or normalized.startswith(prefix):
       return False
-  return any(fnmatch.fnmatch(normalized, _normalize_pattern(pattern)) for pattern in patterns)
+  return True
 
 
 def includes_all_paths(include_patterns: list[str]) -> bool:
@@ -484,6 +490,7 @@ def render_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
 
   rendered_files: list[Path] = []
   matched_patterns: set[str] = set()
+  matched_files: dict[Path, set[str]] = {}
   env = Environment(
     loader=FileSystemLoader(str(root)),
     undefined=StrictUndefined,
@@ -493,22 +500,23 @@ def render_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
     keep_trailing_newline=True,
   )
 
-  for path in root.rglob("*"):
-    if not path.is_file():
-      continue
+  # Path.glob provides normal glob semantics, including recursive ** patterns.
+  # In particular, **/README.md.j2 matches README templates at any depth.
+  for pattern in patterns:
+    normalized_pattern = _normalize_pattern(pattern)
+    for path in root.glob(normalized_pattern):
+      if not path.is_file():
+        continue
+      rel_path = path.relative_to(root).as_posix()
+      if _is_git_internal(rel_path):
+        continue
+      matched_files.setdefault(path, set()).add(pattern)
+
+  for path in sorted(matched_files, key=lambda candidate: candidate.as_posix()):
     rel_path = path.relative_to(root).as_posix()
-    if _is_git_internal(rel_path):
-      continue
-    matching_patterns = [
-      pattern
-      for pattern in patterns
-      if fnmatch.fnmatch(rel_path, _normalize_pattern(pattern))
-    ]
-    if not matching_patterns:
-      continue
     if not should_render(rel_path, patterns, exclude_dirs):
       continue
-    matched_patterns.update(matching_patterns)
+    matched_patterns.update(matched_files[path])
 
     rendered = render_template(root, rel_path, resolved, env)
 

@@ -394,6 +394,25 @@ def test_render_tree_preserves_executable_template_mode(tmp_path: Path) -> None:
   assert output_path.stat().st_mode & 0o111
 
 
+def test_render_tree_supports_recursive_render_path_globs(tmp_path: Path) -> None:
+  (tmp_path / "README.md.j2").write_text("# {{ course_name }}\n", encoding="utf-8")
+  lab_dir = tmp_path / "labs" / "lab1"
+  lab_dir.mkdir(parents=True)
+  (lab_dir / "README.md.j2").write_text("# Lab: {{ course_name }}\n", encoding="utf-8")
+  config = {
+    "defaults": {"render_paths": ["**/README.md.j2"]},
+    "targets": {"spring2026": {"course_name": "Operating Systems"}},
+  }
+
+  rendered = render_tree(tmp_path, config, "spring2026")
+
+  assert sorted(path.relative_to(tmp_path).as_posix() for path in rendered) == [
+    "README.md",
+    "labs/lab1/README.md",
+  ]
+  assert (lab_dir / "README.md").read_text(encoding="utf-8") == "# Lab: Operating Systems\n"
+
+
 def test_student_can_merge_a_new_base_release_without_rewriting_work(tmp_path: Path) -> None:
   base_remote = tmp_path / "base.git"
   base_worktree = tmp_path / "base-worktree"

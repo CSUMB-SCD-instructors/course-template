@@ -1,0 +1,251 @@
+name: Sync Slides to Syllabi Repository
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'slides/*.qmd'
+      - 'slides/assets/**'
+      - 'slides/_extensions/**'
+      - 'slides/_quarto.yml'
+      - 'scripts/prepare_slide_source.sh'
+      - 'scripts/build_slide_pdfs.sh'
+      - 'scripts/sync_slides_site.sh'
+      - '.github/workflows/sync-slides.yml'
+  workflow_dispatch:
+
+jobs:
+  sync-slides:
+    runs-on: ubuntu-latest
+    env:
+      SYLLABI_SYNC_TOKEN: {{ '${{ secrets.SYLLABI_SYNC_TOKEN }}' }}
+
+    steps:
+      - name: Checkout source repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine rebuild scope
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          write_scope() {
+            local rebuild_all="$1"
+            local prune_only="$2"
+            local has_changed_decks="$3"
+            shift 3
+
+            printf 'SLIDES_REBUILD_ALL=%s\n' "$rebuild_all" >> "$GITHUB_ENV"
+            printf 'SLIDES_PRUNE_ONLY=%s\n' "$prune_only" >> "$GITHUB_ENV"
+            printf 'SLIDES_HAS_CHANGED_DECKS=%s\n' "$has_changed_decks" >> "$GITHUB_ENV"
+            if [ "$#" -gt 0 ]; then
+              {
+                printf 'SLIDES_CHANGED_DECKS<<EOF\n'
+                printf '%s\n' "$@"
+                printf 'EOF\n'
+              } >> "$GITHUB_ENV"
+            else
+              printf 'SLIDES_CHANGED_DECKS=\n' >> "$GITHUB_ENV"
+            fi
+          }
+
+          if [ "{{ '${{ github.event_name }}' }}" = "workflow_dispatch" ]; then
+            write_scope true false false
+            exit 0
+          fi
+
+          base="{{ '${{ github.event.before }}' }}"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            write_scope true false false
+            exit 0
+          fi
+
+          changed=$(git diff --name-only --diff-filter=ACMR "$base" "$GITHUB_SHA")
+
+          if printf '%s\n' "$changed" | grep -Eq '^(slides/(assets|_extensions)/|slides/_quarto.yml$|scripts/(prepare_slide_source|build_slide_pdfs|sync_slides_site)\.sh$|\.github/workflows/sync-slides\.yml$)'; then
+            write_scope true false false
+            exit 0
+          fi
+
+          mapfile -t decks < <(
+            printf '%s\n' "$changed" | awk -F/ '/^slides\/[^/]+\.qmd$/ { sub(/\.qmd$/, "", $2); print $2 }' | sort -u
+          )
+
+          if [ "{{ '${#decks[@]}' }}" -eq 0 ]; then
+            deleted_qmds=$(git diff --name-only --diff-filter=D "$base" "$GITHUB_SHA" | awk -F/ '/^slides\/[^/]+\.qmd$/ { sub(/\.qmd$/, "", $2); print $2 }' | sort -u)
+            if [ -n "$deleted_qmds" ]; then
+              write_scope false true false
+            else
+              write_scope false false false
+            fi
+            exit 0
+          fi
+
+          write_scope false false true "${decks[@]}"
+
+      - name: Set up Quarto
+        uses: quarto-dev/quarto-actions/setup@v2
+        with:
+          version: 1.9.37
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install slide PDF tooling
+        run: |
+          set -euo pipefail
+          cd scripts
+          npm install --no-audit --no-fund
+
+      - name: Check for sync token
+        run: |
+          if [ -z "{{ '${{ secrets.SYLLABI_SYNC_TOKEN }}' }}" ]; then
+            echo "::warning::SYLLABI_SYNC_TOKEN secret not found. To enable slide syncing:"
+            echo "::warning::1. Go to repository Settings → Secrets and variables → Actions"
+            echo "::warning::2. Add a new secret named SYLLABI_SYNC_TOKEN"
+            echo "::warning::3. Set the value to a GitHub personal access token with write access to the syllabi repository"
+            echo "::warning::4. The token needs 'repo' permissions for the syllabi repository"
+            echo "Skipping sync due to missing token"
+            exit 0
+          fi
+
+      - name: Checkout target repository
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        uses: actions/checkout@v4
+        with:
+          repository: {{ syllabi_org }}/syllabi
+          token: {{ '${{ secrets.SYLLABI_SYNC_TOKEN }}' }}
+          path: syllabi-repo
+
+      - name: Prepare slide source
+        if: env.SYLLABI_SYNC_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          render_source="$RUNNER_TEMP/slides-render"
+          bash scripts/prepare_slide_source.sh slides "$render_source"
+
+          if ! find "$render_source" -maxdepth 1 -type f -name '*.qmd' | grep -q .; then
+            echo "No publishable slide decks found"
+            echo "SLIDES_READY=false" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "SLIDES_READY=true" >> "$GITHUB_ENV"
+          echo "SLIDES_RENDER_SOURCE=$render_source" >> "$GITHUB_ENV"
+
+      - name: Resolve renderable slide decks
+        if: env.SYLLABI_SYNC_TOKEN != '' && env.SLIDES_READY == 'true' && env.SLIDES_REBUILD_ALL != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -t decks < <(printf '%s\n' "${SLIDES_CHANGED_DECKS:-}" | awk 'NF')
+          renderable=()
+
+          for deck in "${decks[@]}"; do
+            if [ -f "$SLIDES_RENDER_SOURCE/$deck.qmd" ]; then
+              renderable+=("$deck")
+            fi
+          done
+
+          if [ "{{ '${#renderable[@]}' }}" -eq 0 ]; then
+            echo "No renderable changed slide decks found after source preparation"
+            echo "SLIDES_HAS_RENDERABLE_CHANGED_DECKS=false" >> "$GITHUB_ENV"
+            echo "SLIDES_RENDERABLE_CHANGED_DECKS=" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "SLIDES_HAS_RENDERABLE_CHANGED_DECKS=true" >> "$GITHUB_ENV"
+          {
+            printf 'SLIDES_RENDERABLE_CHANGED_DECKS<<EOF\n'
+            printf '%s\n' "${renderable[@]}"
+            printf 'EOF\n'
+          } >> "$GITHUB_ENV"
+
+      - name: Build slide decks
+        if: env.SYLLABI_SYNC_TOKEN != '' && env.SLIDES_READY == 'true' && (env.SLIDES_REBUILD_ALL == 'true' || env.SLIDES_HAS_RENDERABLE_CHANGED_DECKS == 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SLIDES_REBUILD_ALL" = "true" ]; then
+            echo "Running full slide rebuild"
+            rm -rf "$SLIDES_RENDER_SOURCE/out"
+            (
+              cd "$SLIDES_RENDER_SOURCE"
+              quarto render
+            )
+          else
+            echo "Rendering changed slide decks only"
+            mapfile -t decks < <(printf '%s\n' "${SLIDES_RENDERABLE_CHANGED_DECKS:-}" | awk 'NF')
+            if [ "{{ '${#decks[@]}' }}" -eq 0 ]; then
+              echo "No changed slide decks to render"
+              exit 0
+            fi
+            paths=()
+            for deck in "${decks[@]}"; do
+              paths+=("$SLIDES_RENDER_SOURCE/$deck.qmd")
+            done
+            (
+              cd "$SLIDES_RENDER_SOURCE"
+              quarto render "${paths[@]}"
+            )
+          fi
+
+      - name: Build slide PDFs
+        if: env.SYLLABI_SYNC_TOKEN != '' && env.SLIDES_READY == 'true' && (env.SLIDES_REBUILD_ALL == 'true' || env.SLIDES_HAS_RENDERABLE_CHANGED_DECKS == 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SLIDES_REBUILD_ALL" = "true" ]; then
+            bash scripts/build_slide_pdfs.sh "$SLIDES_RENDER_SOURCE" "$SLIDES_RENDER_SOURCE/out"
+          else
+            mapfile -t decks < <(printf '%s\n' "${SLIDES_RENDERABLE_CHANGED_DECKS:-}" | awk 'NF')
+            if [ "{{ '${#decks[@]}' }}" -eq 0 ]; then
+              echo "No changed slide decks to print"
+              exit 0
+            fi
+            paths=()
+            for deck in "${decks[@]}"; do
+              paths+=("$deck.qmd")
+            done
+            bash scripts/build_slide_pdfs.sh "$SLIDES_RENDER_SOURCE" "$SLIDES_RENDER_SOURCE/out" "$SLIDES_RENDER_SOURCE/out/pdfs" "${paths[@]}"
+          fi
+
+      - name: Mirror slides into syllabi repository
+        if: env.SYLLABI_SYNC_TOKEN != '' && env.SLIDES_READY == 'true' && (env.SLIDES_REBUILD_ALL == 'true' || env.SLIDES_PRUNE_ONLY == 'true' || env.SLIDES_HAS_RENDERABLE_CHANGED_DECKS == 'true')
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$SLIDES_PRUNE_ONLY" = "true" ]; then
+            bash scripts/sync_slides_site.sh slides "$SLIDES_RENDER_SOURCE/out" syllabi-repo __prune_only__
+          elif [ "$SLIDES_REBUILD_ALL" = "true" ]; then
+            bash scripts/sync_slides_site.sh slides "$SLIDES_RENDER_SOURCE/out" syllabi-repo
+          else
+            mapfile -t decks < <(printf '%s\n' "${SLIDES_RENDERABLE_CHANGED_DECKS:-}" | awk 'NF')
+            bash scripts/sync_slides_site.sh slides "$SLIDES_RENDER_SOURCE/out" syllabi-repo "${decks[@]}"
+          fi
+
+      - name: Commit and push changes
+        if: env.SYLLABI_SYNC_TOKEN != '' && env.SLIDES_READY == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cd syllabi-repo
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+
+          git add -A slides
+
+          if git diff --staged --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Sync slides from {{ '${{ github.sha }}' }}"
+            git push
+          fi

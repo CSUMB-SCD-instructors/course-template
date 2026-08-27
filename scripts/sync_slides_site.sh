@@ -132,7 +132,10 @@ write_course_index() {
     printf '| Deck | State | HTML | PDF |\n'
     printf '| --- | --- | --- | --- |\n'
 
-    sort -t "$tab" -k7,7 -k4,4 "$manifest" | awk -F '\t' -v course="$course" '
+    # The source filename carries the deck sequence (for example, 00- and
+    # 01-), whereas presentation titles are descriptive and need not sort in
+    # teaching order.
+    sort -t "$tab" -k2,2 -k4,4 "$manifest" | awk -F '\t' -v course="$course" '
       $1 == course {
         printf("| %s | %s | [Open](%s.html) | [PDF](pdfs/%s) |\n", $7, $5, $2, $8)
       }
@@ -160,7 +163,7 @@ write_course_pdf_index() {
     printf '| Deck | PDF |\n'
     printf '| --- | --- |\n'
 
-    sort -t "$tab" -k7,7 -k4,4 "$manifest" | awk -F '\t' -v course="$course" '
+    sort -t "$tab" -k2,2 -k4,4 "$manifest" | awk -F '\t' -v course="$course" '
       $1 == course {
         printf("| %s | [Open](%s) |\n", $7, $8)
       }

@@ -9,11 +9,11 @@ python scripts/manage_course.py --help
 ## Core Workflow
 
 ```bash
-# Build and publish safe, rendered materials to the cohort base repository.
+# Build and publish the safe shared cohort repository, including student Read access.
 python scripts/manage_course.py publish-base --target <cohort>
 
-# Create missing private student repositories and access teams.
-python scripts/manage_course.py provision-student-repos --target <cohort>
+# Optionally also create private repositories and teams for each student.
+python scripts/manage_course.py publish-base --target <cohort> --per-student-repos
 
 # Render and sync a syllabus to the central syllabi repository.
 python scripts/manage_course.py sync-syllabus \
@@ -27,28 +27,27 @@ Use explicit `publish.include` and `publish.exclude` lists to define the
 student-facing surface. Add only explicit `publish.redact` rules for protected
 files.
 
-The legacy shared-repository flow remains available when a target defines
-`student_repo_url`:
-
-```bash
-python scripts/manage_course.py publish-repo --target <cohort>
-```
+Existing per-student configurations should rename `student_repositories` to
+`per_student_repositories`; `student_repo_url` is no longer configured.
 
 Use `--dry-run` where a command provides it before operating on a new cohort.
 
-## Per-student repository URLs in templates
+## Shared repository access
 
-In files rendered by `publish-base`, a plain `{{ student_repo_url }}` is
-intentionally deferred. It remains a placeholder in the shared base, then
-`provision-student-repos` replaces it with the URL of each student's private
-repository before its first commit. Do not apply filters or other Jinja
-expressions to this deferred value.
+`publish-base` derives the repository name as
+`<course_code>-<cohort_slug>-base`, creates or reuses one cohort reader team,
+and grants it Pull access. It also grants configured staff Maintain access.
+Repeat runs are safe: existing teams, members, and invitations are left in
+place. Use `--skip-add-students` to publish before a roster exists.
+
+`{{ student_repo_url }}` remains available in course templates as a
+compatibility alias for the derived common cohort repository URL.
 
 ## Student usage tokens
 
-`provision-student-repos` creates a root `.env` file in each newly initialized
+`publish-base --per-student-repos` creates a root `.env` file in each newly initialized
 private student repository containing `STUDENT_TOKEN`. Before provisioning, set
-`student_repositories.token_secret` in `course-config.yaml` to a private,
+`per_student_repositories.token_secret` in `course-config.yaml` to a private,
 non-placeholder value (for example, generate one with `openssl rand -hex 32`).
 The configuration file is not part of the student publication surface.
 

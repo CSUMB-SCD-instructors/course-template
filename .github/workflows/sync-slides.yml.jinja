@@ -85,10 +85,32 @@ jobs:
 
           write_scope false false true "${decks[@]}"
 
+      - name: Determine published course code
+        shell: bash
+        run: |
+          set -euo pipefail
+          course_code=$(awk '/^[[:space:]]+course_code:/ { value = $2; gsub(/"/, "", value); print value; exit }' course-config.yaml)
+          if [ -z "$course_code" ]; then
+            echo "Unable to determine course_code from course-config.yaml" >&2
+            exit 1
+          fi
+          printf 'SLIDES_COURSE_CODE=%s\n' "$course_code" >> "$GITHUB_ENV"
+
       - name: Set up Quarto
         uses: quarto-dev/quarto-actions/setup@v2
         with:
           version: 1.9.37
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version-file: .python-version
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+
+      - name: Install Python slide dependencies
+        run: uv sync --frozen
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -178,7 +200,7 @@ jobs:
             rm -rf "$SLIDES_RENDER_SOURCE/out"
             (
               cd "$SLIDES_RENDER_SOURCE"
-              quarto render
+              PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH" QUARTO_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python" quarto render
             )
           else
             echo "Rendering changed slide decks only"
@@ -193,7 +215,7 @@ jobs:
             done
             (
               cd "$SLIDES_RENDER_SOURCE"
-              quarto render "${paths[@]}"
+              PATH="$GITHUB_WORKSPACE/.venv/bin:$PATH" QUARTO_PYTHON="$GITHUB_WORKSPACE/.venv/bin/python" quarto render "${paths[@]}"
             )
           fi
 

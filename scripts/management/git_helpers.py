@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator
 
-from git import GitCommandError, InvalidGitRepositoryError, NoSuchPathError, Repo
+from git import InvalidGitRepositoryError, NoSuchPathError, Repo
 
 from .course_config import ConfigError
 
@@ -51,30 +51,3 @@ class GitHelper:
     finally:
       if not keep:
         shutil.rmtree(tempdir, ignore_errors=True)
-
-  def prepare_staging_branch(self, clone_repo: Repo, branch_name: str, source_branch: str) -> str | None:
-    source_ref = f"origin/{source_branch}"
-    staging_ref = f"origin/{branch_name}"
-    remote_refs = {ref.name for ref in clone_repo.remotes.origin.refs}
-
-    if source_ref not in remote_refs:
-      raise ConfigError(f"Source branch does not exist in clone: {source_branch}")
-
-    if any(head.name == branch_name for head in clone_repo.heads):
-      clone_repo.git.checkout(source_ref)
-      clone_repo.delete_head(branch_name, force=True)
-
-    # Build every publication on an orphan branch. The resulting commit has no
-    # parents, so forcing it to the student repository cannot expose source or
-    # prior publication history through the student-facing branch.
-    clone_repo.git.checkout("--orphan", branch_name, source_ref)
-    return staging_ref if staging_ref in remote_refs else None
-
-  def repo_has_changes(self, repo: Repo) -> bool:
-    return repo.is_dirty(untracked_files=True)
-
-  def sync_branch_back(self, clone_repo: Repo, branch_name: str) -> None:
-    try:
-      clone_repo.git.push("--force", self.repo_root.as_posix(), f"{branch_name}:{branch_name}")
-    except GitCommandError:
-      pass

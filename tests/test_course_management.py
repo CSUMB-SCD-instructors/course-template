@@ -9,17 +9,18 @@ from github.GithubException import GithubException
 from scripts.management.course_config import (
   ConfigError,
   prune_tree,
-  render_student_repository_tree,
   render_template,
   render_tree,
   resolve_target,
 )
-from scripts.management.git_helpers import GitHelper
+from scripts.management.manage_course import build_parser
 from scripts.management.student_repositories import (
   StudentRepository,
+  _build_publication_tree,
   _initialize_student_repository,
   _invite_email_to_team,
   base_index_readme,
+  publish_base,
   student_token,
   student_token_secret,
   repository_settings,
@@ -57,19 +58,69 @@ def test_prune_tree_uses_include_and_exclude(tmp_path: Path) -> None:
   assert not (tmp_path / "instructor-notes.md").exists()
 
 
-def test_templates_use_explicit_student_repo_url(tmp_path: Path) -> None:
+def test_templates_use_derived_common_student_repo_url(tmp_path: Path) -> None:
   (tmp_path / "README.md.j2").write_text(
     "git clone {{ student_repo_url }} {{ on_machine_repo_directory }}\n",
     encoding="utf-8",
   )
   config = {
-    "defaults": {"on_machine_repo_directory": "CST334"},
-    "targets": {"online": {"student_repo_url": "https://example.test/CST334-online.git"}},
+    "defaults": {"github_org": "example-org", "on_machine_repo_directory": "CST334"},
+    "targets": {"online": {"course_code": "CST334", "cohort_slug": "fall2026"}},
   }
 
   rendered = render_template(tmp_path, "README.md.j2", resolve_target(config, "online"))
 
-  assert rendered == "git clone https://example.test/CST334-online.git CST334\n"
+  assert rendered == "git clone https://github.com/example-org/CST334-fall2026-base.git CST334\n"
+
+
+def test_publish_base_cli_exposes_unified_workflow_flags() -> None:
+  args = build_parser().parse_args([
+    "publish-base",
+    "--target",
+    "fall2026",
+    "--per-student-repos",
+  ])
+
+  assert args.per_student_repos
+  assert not args.skip_add_students
+
+
+def test_publish_base_rejects_skipping_students_for_per_student_repositories(tmp_path: Path) -> None:
+  with pytest.raises(ConfigError, match="cannot be used"):
+    publish_base(
+      tmp_path,
+      {},
+      "fall2026",
+      source_branch="main",
+      blank_slate=False,
+      allow_dirty=False,
+      dry_run=True,
+      keep_temp=False,
+      per_student_repos=True,
+      skip_add_students=True,
+    )
+
+
+def test_shared_publication_omits_per_student_update_script(tmp_path: Path) -> None:
+  scripts_dir = tmp_path / "scripts"
+  scripts_dir.mkdir()
+  (scripts_dir / "update_from_base.sh.j2").write_text(
+    "git fetch {{ base_repo_url }} base\n",
+    encoding="utf-8",
+  )
+  config = {
+    "defaults": {
+      "github_org": "example-org",
+      "render_paths": ["scripts/update_from_base.sh.j2"],
+      "publish": {"include": ["scripts/update_from_base.sh"]},
+    },
+    "targets": {"fall2026": {"course_code": "CST334", "cohort_slug": "fall2026"}},
+  }
+
+  _build_publication_tree(tmp_path, config, "fall2026", per_student_repos=False)
+
+  assert not (scripts_dir / "update_from_base.sh").exists()
+  assert not (scripts_dir / "update_from_base.sh.j2").exists()
 
 
 def test_sync_syllabi_writes_commits_and_skips_unchanged(tmp_path: Path) -> None:
@@ -149,51 +200,11 @@ def test_sync_syllabi_dry_run_does_not_write(tmp_path: Path) -> None:
   assert not (destination_root / "_active").exists()
 
 
-def test_publish_staging_branch_is_an_orphan_commit(tmp_path: Path) -> None:
-  source_root = tmp_path / "source"
-  student_remote = tmp_path / "student.git"
-  source_root.mkdir()
-  source_repo = Repo.init(source_root)
-  (source_root / "student_code.c").write_text("int answer(void) { return 42; }\n", encoding="utf-8")
-  source_repo.git.add(A=True)
-  source_repo.index.commit("Source solution")
-  source_repo.git.branch("-M", "main")
-  source_repo.git.branch("redacted_for_students")
-  Repo.init(student_remote, bare=True)
-
-  helper = GitHelper(source_root)
-  with helper.temporary_clone() as (publish_repo, _):
-    previous_ref = helper.prepare_staging_branch(
-      publish_repo,
-      "redacted_for_students",
-      "main",
-    )
-    assert previous_ref == "origin/redacted_for_students"
-
-    worktree_root = Path(publish_repo.working_tree_dir or ".")
-    (worktree_root / "student_code.c").write_text(
-      "int answer(void) { return 0; }\n",
-      encoding="utf-8",
-    )
-    publish_repo.git.add(A=True)
-    publish_repo.index.commit("Redacted publication")
-    assert publish_repo.git.log("-1", "--format=%P") == ""
-
-    publish_repo.git.push("--force", student_remote.as_posix(), "redacted_for_students:main")
-
-  clone_root = tmp_path / "student-clone"
-  student_repo = Repo.clone_from(student_remote.as_posix(), clone_root, branch="main")
-  assert len(list(student_repo.iter_commits("main"))) == 1
-  assert (clone_root / "student_code.c").read_text(encoding="utf-8") == (
-    "int answer(void) { return 0; }\n"
-  )
-
-
 def test_cohort_target_inherits_mode_and_derives_base_repository() -> None:
   config = {
     "defaults": {
       "github_org": "example-org",
-      "student_repositories": {"base_branch": "base", "base_index_branch": "main"},
+      "per_student_repositories": {},
     },
     "modes": {
       "online": {
@@ -227,7 +238,7 @@ def test_student_repositories_use_normalized_email_local_parts() -> None:
     "github_org": "example-org",
     "base_repo_name": "CST334-spring2026-base",
     "base_repo_url": "https://github.com/example-org/CST334-spring2026-base.git",
-    "student_repositories": {"base_branch": "base", "base_index_branch": "main"},
+    "per_student_repositories": {},
   }
 
   students = student_repositories(resolved, ["Sogden@csumb.edu", "jane.doe+lab@csumb.edu"])
@@ -245,7 +256,7 @@ def test_student_token_is_stable_scoped_and_normalizes_email() -> None:
     "github_org": "example-org",
     "base_repo_name": "CST334-spring2026-base",
     "base_repo_url": "https://github.com/example-org/CST334-spring2026-base.git",
-    "student_repositories": {"token_secret": "private course secret"},
+    "per_student_repositories": {"token_secret": "private course secret"},
   }
 
   token = student_token(resolved, " Sogden@CSUMB.edu ")
@@ -261,7 +272,7 @@ def test_student_token_is_stable_scoped_and_normalizes_email() -> None:
 
 @pytest.mark.parametrize("secret", [None, "", "CHANGE_ME", "replace-me"])
 def test_student_token_requires_a_configured_secret(secret: object) -> None:
-  resolved = {"student_repositories": {"token_secret": secret}}
+  resolved = {"per_student_repositories": {"token_secret": secret}}
 
   with pytest.raises(ConfigError, match="token_secret"):
     student_token_secret(resolved)
@@ -294,6 +305,52 @@ def test_student_repository_initialization_commits_root_env_file(tmp_path: Path)
   student_repo = Repo.clone_from(student_remote.as_posix(), clone_root, branch="main")
   assert (clone_root / ".env").read_text(encoding="utf-8") == "STUDENT_TOKEN=test-token\n"
   assert student_repo.git.log("-1", "--format=%s") == "Add student usage token"
+
+
+def test_student_repository_initialization_can_replace_an_existing_main_branch(tmp_path: Path) -> None:
+  base_remote = tmp_path / "base.git"
+  student_remote = tmp_path / "student.git"
+  base_worktree = tmp_path / "base-worktree"
+  Repo.init(base_remote, bare=True)
+  Repo.init(student_remote, bare=True)
+
+  base_repo = Repo.init(base_worktree)
+  (base_worktree / "starter.txt").write_text("fresh base\n", encoding="utf-8")
+  base_repo.git.add(A=True)
+  base_repo.index.commit("Initial base")
+  base_repo.git.branch("-M", "base")
+  base_repo.git.push(base_remote.as_posix(), "base:base")
+
+  _initialize_student_repository(
+    base_remote.as_posix(),
+    "base",
+    student_remote.as_posix(),
+    "old-token",
+    {"targets": {"test": {}}},
+    "test",
+  )
+  student_worktree = tmp_path / "student-worktree"
+  student_repo = Repo.clone_from(student_remote.as_posix(), student_worktree, branch="main")
+  (student_worktree / "student-work.txt").write_text("work\n", encoding="utf-8")
+  student_repo.git.add(A=True)
+  student_repo.index.commit("Student work")
+  student_repo.git.push("origin", "main")
+
+  _initialize_student_repository(
+    base_remote.as_posix(),
+    "base",
+    student_remote.as_posix(),
+    "new-token",
+    {"targets": {"test": {}}},
+    "test",
+    force=True,
+  )
+
+  replacement_root = tmp_path / "replacement-clone"
+  Repo.clone_from(student_remote.as_posix(), replacement_root, branch="main")
+  assert (replacement_root / "starter.txt").read_text(encoding="utf-8") == "fresh base\n"
+  assert not (replacement_root / "student-work.txt").exists()
+  assert (replacement_root / ".env").read_text(encoding="utf-8") == "STUDENT_TOKEN=new-token\n"
 
 
 def test_student_invitation_permission_error_includes_auth_guidance(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -358,13 +415,12 @@ def test_base_index_readme_links_to_sorted_student_repositories() -> None:
 
 def test_student_update_script_renders_cohort_base_details(tmp_path: Path) -> None:
   (tmp_path / "update_from_base.sh.j2").write_text(
-    "git fetch {{ base_repo_url }} {{ student_repositories.base_branch }}\n",
+    "git fetch {{ base_repo_url }} base\n",
     encoding="utf-8",
   )
   config = {
     "defaults": {
       "github_org": "example-org",
-      "student_repositories": {"base_branch": "base"},
     },
     "modes": {"in-person": {"course_code": "CST334"}},
     "targets": {"spring2026": {"mode": "in-person", "cohort_slug": "spring2026"}},
@@ -416,26 +472,19 @@ def test_render_tree_supports_recursive_render_path_globs(tmp_path: Path) -> Non
   assert (lab_dir / "README.md").read_text(encoding="utf-8") == "# Lab: Operating Systems\n"
 
 
-def test_student_repository_url_is_deferred_until_provisioning(tmp_path: Path) -> None:
+def test_student_repository_url_alias_is_common_base_url(tmp_path: Path) -> None:
   template_path = tmp_path / "README.md.j2"
   template_path.write_text("Clone {{ student_repo_url }}\n", encoding="utf-8")
   config = {
-    "defaults": {"render_paths": ["README.md.j2"]},
-    "targets": {"fall2026": {}},
+    "defaults": {"github_org": "example-org", "render_paths": ["README.md.j2"]},
+    "targets": {"fall2026": {"course_code": "CST334", "cohort_slug": "fall2026"}},
   }
 
-  render_tree(tmp_path, config, "fall2026", defer_student_repo_url=True)
+  render_tree(tmp_path, config, "fall2026")
 
   readme_path = tmp_path / "README.md"
-  assert readme_path.read_text(encoding="utf-8") == "Clone {{ student_repo_url }}\n"
-  render_student_repository_tree(
-    tmp_path,
-    config,
-    "fall2026",
-    "https://github.com/example-org/CST334-fall2026-student.git",
-  )
   assert readme_path.read_text(encoding="utf-8") == (
-    "Clone https://github.com/example-org/CST334-fall2026-student.git\n"
+    "Clone https://github.com/example-org/CST334-fall2026-base.git\n"
   )
 
 

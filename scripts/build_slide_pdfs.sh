@@ -124,7 +124,7 @@ for doc in "${docs[@]}"; do
   course=$(extract_yaml_scalar course "$doc")
 
   if [ -z "${course:-}" ]; then
-    course="CST334"
+    course="${SLIDES_COURSE_CODE:-CST334}"
   fi
 
   if [ ! -f "$build_dir/$base.html" ]; then

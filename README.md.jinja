@@ -17,12 +17,21 @@ student repositories, grading, and syllabus synchronization.
 ```bash
 python scripts/manage_course.py --help
 python scripts/manage_course.py publish-base --target {{ cohort_slug }}
-python scripts/manage_course.py provision-student-repos --target {{ cohort_slug }}
+# Optional: additionally create a private repository for each student.
+python scripts/manage_course.py publish-base --target {{ cohort_slug }} --per-student-repos
 ```
 
-`publish-base` creates or updates the safe cohort base. Students update their
-own work with the generated `scripts/update_from_base.sh` script after a new
-base release. See `scripts/management/README.md` for all commands.
+`publish-base` creates or updates the safe cohort repository and grants roster
+students Read access. Without `--per-student-repos`, students use that one
+shared repository directly. See `scripts/management/README.md` for details.
+
+## Publishing Slides
+
+The included **Sync Slides to Syllabi Repository** workflow publishes
+top-level `slides/*.qmd` decks to the central syllabi site. Add the
+`SYLLABI_SYNC_TOKEN` Actions secret to this repository; it must have write
+access to the central syllabi repository. Push a slide change to `main`, or
+run the workflow manually, to publish the HTML decks and PDF handouts.
 
 ## Updating the Framework
 

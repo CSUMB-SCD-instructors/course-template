@@ -14,6 +14,8 @@ _skip_if_exists:
   - "uv.lock"
   - ".python-version"
   - ".envrc"
+  # Rosters are maintained independently for each course and cohort.
+  - "student_lists/**"
 
 course_code:
   type: str

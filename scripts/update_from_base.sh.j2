@@ -4,7 +4,7 @@ set -euo pipefail
 
 BASE_REMOTE="course-base"
 BASE_URL="{{ base_repo_url }}"
-BASE_BRANCH="{{ student_repositories.base_branch }}"
+BASE_BRANCH="base"
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
   echo "Your working tree has uncommitted changes. Commit or stash them before updating."

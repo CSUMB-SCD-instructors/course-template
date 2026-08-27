@@ -34,11 +34,9 @@ defaults:
       - "**/.idea/**"
     # Add only explicit redactions for files that this course must withhold.
     redact: []
-  student_repositories:
-    # Names are generated as <course_code>-<cohort_slug>-base and
-    # <course_code>-<cohort_slug>-<student_email_local_part>.
-    base_branch: base
-    base_index_branch: main
+  per_student_repositories:
+    # Only required when publishing with --per-student-repos. Names are
+    # generated as <course_code>-<cohort_slug>-<student_email_local_part>.
     # Keep this private. It derives the stable STUDENT_TOKEN committed to each
     # student's private repository; use a long random value, not a guessable salt.
     token_secret: "CHANGE_ME"
@@ -52,7 +50,7 @@ modes:
     slack_channel_url: ""
     forbidden_strings: []
     # GitHub usernames or email addresses for course staff. Staff receive
-    # Maintain access to every private per-student repository for this cohort.
+    # Maintain access to the cohort repository and any per-student repositories.
     staff: []
 
 targets:
@@ -60,5 +58,3 @@ targets:
     mode: {{ course_mode }}
     cohort_slug: {{ cohort_slug }}
     student_list: student_lists/students.{{ cohort_slug }}.txt
-    # Optional legacy shared-repository workflow setting:
-    # student_repo_url: https://github.com/OWNER/{{ course_code }}.git

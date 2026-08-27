@@ -86,8 +86,10 @@ prune_legacy_root_outputs() {
 
 write_root_index() {
   local publish_root="$1"
-  local manifest="$2"
   local index_file="$publish_root/index.md"
+  local course_dir
+  local course
+  local count
 
   {
     printf '%s\n' '---'
@@ -99,8 +101,11 @@ write_root_index() {
     printf '| Class | Decks |\n'
     printf '| --- | ---: |\n'
 
-    awk -F '\t' '{ print $1 }' "$manifest" | sort -u | while IFS= read -r course; do
-      count=$(awk -F '\t' -v course="$course" '$1 == course { count++ } END { print count + 0 }' "$manifest")
+    for course_dir in "$publish_root"/*; do
+      [ -d "$course_dir" ] || continue
+      course=$(basename "$course_dir")
+      count=$(find "$course_dir" -maxdepth 1 -type f -name '*.html' | wc -l | tr -d '[:space:]')
+      [ "$count" -gt 0 ] || continue
       printf '| [%s](%s/) | %d |\n' "$course" "$course" "$count"
     done
   } > "$index_file"
@@ -195,6 +200,12 @@ echo "Publishing full slide site from rendered outputs"
 
 prune_legacy_root_outputs "$publish_root"
 
+# Quarto's Reveal.js support files include package README files. Jekyll treats
+# them as pages and adds their titles (for example, Chalkboard) to the global
+# site navigation; they are not required by the rendered decks. Remove them
+# from all existing course outputs as well as newly copied decks.
+find "$publish_root" -type f -path '*_files/*.md' -delete
+
 for doc in "${docs[@]}"; do
   base=$(basename "$doc" .qmd)
   course=$(extract_yaml_scalar course "$doc")
@@ -203,7 +214,7 @@ for doc in "${docs[@]}"; do
   draft_state=$(extract_yaml_scalar draft_state "$doc")
 
   if [ -z "${course:-}" ]; then
-    course="CST334"
+    course="${SLIDES_COURSE_CODE:-CST334}"
   fi
   if [ -z "${title:-}" ]; then
     title="$base"
@@ -247,6 +258,7 @@ for doc in "${docs[@]}"; do
     copy_file "$build_dir/pdfs/$course/$base.pdf" "$course_dir/pdfs/$pdf_name"
     copy_file "$build_dir/styles.css" "$course_dir/styles.css"
     copy_dir "$build_dir/${base}_files" "$course_dir/${base}_files"
+    find "$course_dir/${base}_files" -type f -name '*.md' -delete
     copy_dir "$build_dir/assets" "$course_dir/assets"
   fi
 
@@ -268,17 +280,22 @@ prune_stale_paths() {
   done
 }
 
-prune_stale_paths "$active_html" '*.html' "$publish_root"
-find "$publish_root" -type f -path '*/pdfs/*.pdf' -print0 | while IFS= read -r -d '' file; do
-  if ! grep -Fxq "$file" "$active_pdf"; then
-    rm -f "$file"
-  fi
-done
-find "$publish_root" -type d -name '*_files' -print0 | while IFS= read -r -d '' dir; do
-  if ! grep -Fxq "$dir" "$active_files"; then
-    rm -rf "$dir"
-  fi
-done
+# A source repository owns only its own course directory. Do not prune decks
+# published by other course repositories during an incremental sync.
+while IFS= read -r course; do
+  course_dir="$publish_root/$course"
+  prune_stale_paths "$active_html" '*.html' "$course_dir"
+  find "$course_dir" -type f -path '*/pdfs/*.pdf' -print0 | while IFS= read -r -d '' file; do
+    if ! grep -Fxq "$file" "$active_pdf"; then
+      rm -f "$file"
+    fi
+  done
+  find "$course_dir" -type d -name '*_files' -print0 | while IFS= read -r -d '' dir; do
+    if ! grep -Fxq "$dir" "$active_files"; then
+      rm -rf "$dir"
+    fi
+  done
+done < <(awk -F '\t' '!seen[$1]++ { print $1 }' "$manifest")
 
 for file in "$build_dir"/*; do
   [ -e "$file" ] || continue
@@ -333,7 +350,7 @@ awk -F '\t' '
   write_course_index "$publish_root" "$course" "$manifest"
 done
 
-write_root_index "$publish_root" "$manifest"
+write_root_index "$publish_root"
 
 mkdir -p "$target_repo/slides"
 rsync -a --delete "$publish_root/" "$target_repo/slides/"

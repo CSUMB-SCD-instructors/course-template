@@ -22,7 +22,6 @@ from .course_config import (
   load_config,
   prune_tree,
   redact_tree,
-  render_student_repository_tree,
   render_tree,
   resolve_target,
 )
@@ -57,14 +56,14 @@ def normalized_student_email(email: str) -> str:
 
 
 def student_token_secret(resolved: dict[str, Any]) -> str:
-  student_repositories_cfg = resolved.get("student_repositories")
-  if not isinstance(student_repositories_cfg, dict):
-    raise ConfigError("student_repositories must be configured")
+  per_student_cfg = resolved.get("per_student_repositories")
+  if not isinstance(per_student_cfg, dict):
+    raise ConfigError("per_student_repositories must be configured")
 
-  secret = student_repositories_cfg.get("token_secret")
+  secret = per_student_cfg.get("token_secret")
   if not isinstance(secret, str) or secret.strip().casefold() in TOKEN_SECRET_PLACEHOLDERS:
     raise ConfigError(
-      "student_repositories.token_secret must be a non-empty private course secret"
+      "per_student_repositories.token_secret must be a non-empty private course secret"
     )
   return secret
 
@@ -95,25 +94,20 @@ def student_slug(email: str) -> str:
 
 
 def repository_settings(resolved: dict[str, Any]) -> dict[str, str]:
-  student_repositories = resolved.get("student_repositories")
-  if not isinstance(student_repositories, dict):
-    raise ConfigError("student_repositories must be configured")
-
+  """Return the derived cohort repository settings."""
   required = ("course_code", "cohort_slug", "github_org", "base_repo_name", "base_repo_url")
   missing = [key for key in required if not isinstance(resolved.get(key), str) or not resolved[key]]
   if missing:
     raise ConfigError("Missing student repository settings: " + ", ".join(missing))
 
-  base_branch = str(student_repositories.get("base_branch", "base"))
-  index_branch = str(student_repositories.get("base_index_branch", "main"))
   return {
     "course_code": str(resolved["course_code"]),
     "cohort_slug": str(resolved["cohort_slug"]),
     "github_org": str(resolved["github_org"]),
     "base_repo_name": str(resolved["base_repo_name"]),
     "base_repo_url": str(resolved["base_repo_url"]),
-    "base_branch": base_branch,
-    "index_branch": index_branch,
+    "base_branch": "base",
+    "index_branch": "main",
   }
 
 
@@ -197,12 +191,59 @@ def _add_staff_member(gh: Any, org: Any, team: Any, member: str) -> None:
       raise
 
 
-def _build_publication_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
-  render_tree(root, config, target, defer_student_repo_url=True)
+def _build_publication_tree(
+  root: Path,
+  config: dict[str, Any],
+  target: str,
+  *,
+  per_student_repos: bool,
+) -> list[Path]:
+  render_tree(root, config, target)
   remove_template_sources(root)
   prune_tree(root, config, target)
+  if not per_student_repos:
+    update_script = root / "scripts" / "update_from_base.sh"
+    if update_script.exists():
+      update_script.unlink()
   redacted = redact_tree(root, config, target)
   return redacted
+
+
+def _require_student_emails(resolved: dict[str, Any], target: str) -> list[str]:
+  student_list = resolved.get("student_list")
+  if not isinstance(student_list, str) or not student_list:
+    raise ConfigError(f"Target '{target}' must define student_list before adding students")
+  return read_student_emails(Path(student_list))
+
+
+def _ensure_base_access(
+  gh: Any,
+  org: Any,
+  base_repo: Any,
+  settings: dict[str, str],
+  staff: list[str],
+  emails: list[str],
+) -> Any:
+  """Ensure staff and enrolled students have their cohort-level access."""
+  staff_team, _ = _get_or_create_team(
+    org,
+    f"{settings['course_code']}:{settings['cohort_slug']}:staff",
+    f"Staff access to {settings['cohort_slug']} course repositories",
+  )
+  staff_team.set_repo_permission(base_repo, "maintain")
+  for member in staff:
+    _add_staff_member(gh, org, staff_team, member)
+
+  cohort_team, _ = _get_or_create_team(
+    org,
+    f"{settings['course_code']}:{settings['cohort_slug']}:base-readers",
+    f"Read access to the {settings['cohort_slug']} course base",
+  )
+  cohort_team.set_repo_permission(base_repo, "pull")
+  for email in emails:
+    _invite_email_to_team(org, cohort_team, email)
+
+  return staff_team
 
 
 def _checkout_orphan_branch(repo: Repo, branch_name: str, source_ref: str) -> None:
@@ -239,9 +280,19 @@ def publish_base(
   allow_dirty: bool,
   dry_run: bool,
   keep_temp: bool,
+  per_student_repos: bool = False,
+  skip_add_students: bool = False,
 ) -> int:
+  if per_student_repos and skip_add_students:
+    raise ConfigError("--per-student-repos cannot be used with --skip-add-students")
+
   resolved = resolve_target(config, target)
   settings = repository_settings(resolved)
+  staff = staff_members(resolved)
+  emails = [] if skip_add_students else _require_student_emails(resolved, target)
+  if per_student_repos:
+    student_token_secret(resolved)
+    student_repositories(resolved, emails)
   helper = GitHelper(source_root)
   helper.ensure_branch(source_branch)
   validate_dirty_state(helper, config, target, source_branch, allow_dirty)
@@ -249,30 +300,41 @@ def publish_base(
 
   info(f"Publishing cohort base for {target}")
   print(f"  Base repository: {settings['base_repo_name']}")
-  print(f"  Base branch: {settings['base_branch']}")
+  publication_branch = settings["base_branch"] if per_student_repos else settings["index_branch"]
+  print(f"  Publication branch: {publication_branch}")
+  print(f"  Per-student repositories: {'yes' if per_student_repos else 'no'}")
+  print(f"  Add students: {'no' if skip_add_students else 'yes'}")
   print(f"  Blank slate: {'yes' if blank_slate else 'no'}")
   if not confirm("Continue with base publication? (y/N): "):
     info("Base publication cancelled.")
     return 0
 
   base_url = settings["base_repo_url"]
+  gh = None
+  org = None
+  base_repo = None
   if not dry_run:
     gh = github_client()
     org = gh.get_organization(settings["github_org"])
     base_repo, _ = _get_or_create_repo(
       org,
       settings["base_repo_name"],
-      f"Redacted course base for {settings['course_code']} {settings['cohort_slug']}",
+      f"Student materials for {settings['course_code']} {settings['cohort_slug']}",
     )
     base_url = base_repo.clone_url
   with helper.temporary_clone(keep=keep_temp) as (worktree_repo, tempdir):
     previous_base = None
     if not blank_slate and not dry_run:
-      previous_base = _fetch_base_commit(worktree_repo, base_url, settings["base_branch"])
-    _checkout_orphan_branch(worktree_repo, settings["base_branch"], f"origin/{source_branch}")
+      previous_base = _fetch_base_commit(worktree_repo, base_url, publication_branch)
+    _checkout_orphan_branch(worktree_repo, publication_branch, f"origin/{source_branch}")
     worktree_root = Path(worktree_repo.working_tree_dir or ".")
     try:
-      redacted = _build_publication_tree(worktree_root, config, target)
+      redacted = _build_publication_tree(
+        worktree_root,
+        config,
+        target,
+        per_student_repos=per_student_repos,
+      )
     except Exception as exc:
       if current_branch != source_branch:
         raise ConfigError(
@@ -288,6 +350,7 @@ def publish_base(
       info("Base publication cancelled.")
       return 0
 
+    has_content_changes = True
     if previous_base is not None:
       try:
         worktree_repo.git.diff("--cached", "--quiet", previous_base.hexsha)
@@ -295,21 +358,51 @@ def publish_base(
         pass
       else:
         info("No base content changes detected.")
+        if dry_run:
+          return 0
+        # Access management still runs below so newly enrolled students are
+        # invited even when the published course files have not changed.
+        has_content_changes = False
+
+    if has_content_changes:
+      message = f"Publish {settings['cohort_slug']} materials: {datetime.date.today().isoformat()}"
+      parents = [previous_base] if previous_base is not None else []
+      worktree_repo.index.commit(message, parent_commits=parents)
+      if dry_run:
+        info("Dry run enabled: skipping base push.")
         return 0
 
-    message = f"Publish {settings['cohort_slug']} base: {datetime.date.today().isoformat()}"
-    parents = [previous_base] if previous_base is not None else []
-    worktree_repo.index.commit(message, parent_commits=parents)
-    if dry_run:
-      info("Dry run enabled: skipping base push.")
-      return 0
+      push_args = [base_url, f"{publication_branch}:{publication_branch}"]
+      if blank_slate or previous_base is None:
+        push_args.insert(0, "--force")
+      worktree_repo.git.push(*push_args)
 
-    push_args = [base_url, f"{settings['base_branch']}:{settings['base_branch']}"]
-    if blank_slate or previous_base is None:
-      push_args.insert(0, "--force")
-    worktree_repo.git.push(*push_args)
+  if dry_run:
+    return 0
 
-  success(f"Published {settings['base_repo_name']}:{settings['base_branch']}")
+  assert gh is not None and org is not None and base_repo is not None
+  if per_student_repos:
+    provision_student_repositories(
+      config,
+      target,
+      dry_run=False,
+      confirm_changes=False,
+    )
+  elif not skip_add_students:
+    _ensure_base_access(gh, org, base_repo, settings, staff, emails)
+    base_repo.edit(default_branch=settings["index_branch"])
+  else:
+    staff_team, _ = _get_or_create_team(
+      org,
+      f"{settings['course_code']}:{settings['cohort_slug']}:staff",
+      f"Staff access to {settings['cohort_slug']} course repositories",
+    )
+    staff_team.set_repo_permission(base_repo, "maintain")
+    for member in staff:
+      _add_staff_member(gh, org, staff_team, member)
+    base_repo.edit(default_branch=settings["index_branch"])
+
+  success(f"Published {settings['base_repo_name']}:{publication_branch}")
   return 0
 
 
@@ -359,16 +452,17 @@ def _write_base_index(
 def _initialize_student_repository(
   base_url: str,
   base_branch: str,
-  student_repo_url: str,
+  student_repository_remote: str,
   token: str,
   config: dict[str, Any],
   target: str,
+  *,
+  force: bool = False,
 ) -> None:
   """Create a student's main branch from the base and add its private token."""
   with tempfile.TemporaryDirectory(prefix="course-student-repo-") as raw_tempdir:
     base_clone = Repo.clone_from(base_url, raw_tempdir, branch=base_branch)
     root = Path(base_clone.working_tree_dir or raw_tempdir)
-    render_student_repository_tree(root, config, target, student_repo_url)
     (root / ".env").write_text(f"STUDENT_TOKEN={token}\n", encoding="utf-8")
     base_clone.git.add(".env")
     actor = Actor("Course management", "course-management@example.invalid")
@@ -377,7 +471,10 @@ def _initialize_student_repository(
       author=actor,
       committer=actor,
     )
-    base_clone.git.push(student_repo_url, f"{base_branch}:main")
+    push_args = [student_repository_remote, f"{base_branch}:main"]
+    if force:
+      push_args.insert(0, "--force")
+    base_clone.git.push(*push_args)
 
 
 def provision_student_repositories(
@@ -385,23 +482,23 @@ def provision_student_repositories(
   target: str,
   *,
   dry_run: bool,
+  overwrite_existing: bool = False,
+  confirm_changes: bool = True,
 ) -> int:
   resolved = resolve_target(config, target)
   settings = repository_settings(resolved)
-  student_list = resolved.get("student_list")
-  if not isinstance(student_list, str) or not student_list:
-    raise ConfigError(f"Target '{target}' must define student_list before provisioning")
-  emails = read_student_emails(Path(student_list))
+  emails = _require_student_emails(resolved, target)
   students = student_repositories(resolved, emails)
   # Validate the shared secret before prompting or creating GitHub resources.
   student_token_secret(resolved)
   staff = staff_members(resolved)
-  staff_team_name = f"{settings['course_code']}:{settings['cohort_slug']}:staff"
 
   info(f"Provisioning {len(students)} student repositories for {target}")
   for student in students:
     print(f"  - {student.repository_name}")
-  print(f"  Staff team: {staff_team_name} ({len(staff)} configured member(s), Maintain access)")
+  print(f"  Staff members: {len(staff)} configured (Maintain access)")
+  if overwrite_existing:
+    print("  Existing student main branches: WILL BE REPLACED from the current base")
   if dry_run:
     info("Dry run enabled: no teams or repositories will be created.")
     return 0
@@ -417,29 +514,20 @@ def provision_student_repositories(
     ) from exc
   base_url = base_repo.clone_url
 
-  if not confirm("Create missing teams and repositories? (y/N): "):
-    info("Student provisioning cancelled.")
-    return 0
+  if confirm_changes:
+    confirmation = (
+      "Overwrite existing student main branches from the current base? (y/N): "
+      if overwrite_existing
+      else "Create missing teams and repositories? (y/N): "
+    )
+    if not confirm(confirmation):
+      info("Student provisioning cancelled.")
+      return 0
 
-  cohort_team, _ = _get_or_create_team(
-    org,
-    f"{settings['course_code']}:{settings['cohort_slug']}:base-readers",
-    f"Read access to the {settings['cohort_slug']} course base",
-  )
-  cohort_team.set_repo_permission(base_repo, "pull")
-  staff_team, _ = _get_or_create_team(
-    org,
-    staff_team_name,
-    f"Staff access to {settings['cohort_slug']} student repositories",
-  )
-  for member in staff:
-    _add_staff_member(gh, org, staff_team, member)
+  staff_team = _ensure_base_access(gh, org, base_repo, settings, staff, emails)
 
-  newly_invited: list[str] = []
-  already_invited_or_members: list[str] = []
   for student in students:
     info(f"Provisioning {student.repository_name}")
-    base_invitation_created = _invite_email_to_team(org, cohort_team, student.email)
     student_repo, _ = _get_or_create_repo(
       org,
       student.repository_name,
@@ -451,10 +539,8 @@ def provision_student_repositories(
       f"Write access to {student.repository_name}",
     )
     repository_invitation_created = _invite_email_to_team(org, student_team, student.email)
-    if base_invitation_created or repository_invitation_created:
-      newly_invited.append(student.email)
-    else:
-      already_invited_or_members.append(student.email)
+    if repository_invitation_created:
+      info(f"Invited {student.email} to {student.repository_name}")
     student_team.set_repo_permission(student_repo, "push")
     staff_team.set_repo_permission(student_repo, "maintain")
 
@@ -464,7 +550,7 @@ def provision_student_repositories(
     except UnknownObjectException:
       initialized = False
 
-    if not initialized:
+    if not initialized or overwrite_existing:
       _initialize_student_repository(
         base_url,
         settings["base_branch"],
@@ -472,22 +558,12 @@ def provision_student_repositories(
         student_token(resolved, student.email),
         config,
         target,
+        force=overwrite_existing,
       )
       student_repo.edit(default_branch="main")
 
   _write_base_index(base_url, settings, students)
   base_repo.edit(default_branch=settings["index_branch"])
-  print("Invitation update:")
-  if newly_invited:
-    print("  New organization invitation sent:")
-    for email in newly_invited:
-      print(f"    - {email}")
-  else:
-    print("  No new organization invitations sent.")
-  if already_invited_or_members:
-    print("  No new invitation (already a member or invitation pending):")
-    for email in already_invited_or_members:
-      print(f"    - {email}")
   success("Student repository provisioning complete.")
   return 0
 
@@ -503,9 +579,6 @@ def run_publish_base(args: argparse.Namespace) -> int:
     allow_dirty=args.allow_dirty,
     dry_run=args.dry_run,
     keep_temp=args.keep_temp,
+    per_student_repos=args.per_student_repos,
+    skip_add_students=args.skip_add_students,
   )
-
-
-def run_provision_student_repositories(args: argparse.Namespace) -> int:
-  config = load_config(Path(args.config))
-  return provision_student_repositories(config, args.target, dry_run=args.dry_run)

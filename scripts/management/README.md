@@ -55,3 +55,19 @@ Tokens are stable HMAC-SHA-256 values scoped to the course, cohort, and
 normalized student email. A checking server can use the same secret and roster
 to reproduce expected values. Do not print the secret or tokens in logs, and do
 not use a short or public salt such as `42`.
+
+## Updating private student repositories
+
+Each private student repository has a publisher-managed `base` branch. On every
+`publish-base --per-student-repos` run, that branch is updated to exactly match
+the shared cohort base; student work on `main` is not changed. Students can
+inspect it on GitHub or update their work with:
+
+```bash
+git fetch origin base
+git merge origin/base
+```
+
+The generated `scripts/update_from_base.sh` performs those commands after
+checking for uncommitted changes. Treat `base` as instructor-owned: students
+should not commit or push to it.

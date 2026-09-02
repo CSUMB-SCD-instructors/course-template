@@ -18,6 +18,7 @@ from scripts.management.student_repositories import (
   StudentRepository,
   _build_publication_tree,
   _initialize_student_repository,
+  _sync_student_base_branch,
   _invite_email_to_team,
   base_index_readme,
   publish_base,
@@ -305,6 +306,44 @@ def test_student_repository_initialization_commits_root_env_file(tmp_path: Path)
   student_repo = Repo.clone_from(student_remote.as_posix(), clone_root, branch="main")
   assert (clone_root / ".env").read_text(encoding="utf-8") == "STUDENT_TOKEN=test-token\n"
   assert student_repo.git.log("-1", "--format=%s") == "Add student usage token"
+  student_repo.remotes.origin.fetch("base")
+  assert student_repo.git.rev_parse("origin/base") == base_repo.head.commit.hexsha
+
+
+def test_student_base_branch_can_be_synced_without_rewriting_main(tmp_path: Path) -> None:
+  base_remote = tmp_path / "base.git"
+  student_remote = tmp_path / "student.git"
+  base_worktree = tmp_path / "base-worktree"
+  Repo.init(base_remote, bare=True)
+  Repo.init(student_remote, bare=True)
+
+  base_repo = Repo.init(base_worktree)
+  (base_worktree / "assignment.txt").write_text("first release\n", encoding="utf-8")
+  base_repo.git.add(A=True)
+  base_repo.index.commit("First base")
+  base_repo.git.branch("-M", "base")
+  base_repo.git.push(base_remote.as_posix(), "base:base")
+  _initialize_student_repository(
+    base_remote.as_posix(), "base", student_remote.as_posix(), "test-token", {}, "test"
+  )
+
+  student_worktree = tmp_path / "student-worktree"
+  student_repo = Repo.clone_from(student_remote.as_posix(), student_worktree, branch="main")
+  (student_worktree / "student.txt").write_text("my work\n", encoding="utf-8")
+  student_repo.git.add(A=True)
+  student_repo.index.commit("Student work")
+  student_repo.git.push("origin", "main")
+  student_main = student_repo.head.commit.hexsha
+
+  (base_worktree / "assignment.txt").write_text("second release\n", encoding="utf-8")
+  base_repo.git.add(A=True)
+  base_repo.index.commit("Second base")
+  base_repo.git.push(base_remote.as_posix(), "base:base")
+  _sync_student_base_branch(base_remote.as_posix(), "base", student_remote.as_posix())
+
+  student_repo.remotes.origin.fetch("base")
+  assert student_repo.git.rev_parse("origin/base") == base_repo.head.commit.hexsha
+  assert student_repo.git.rev_parse("main") == student_main
 
 
 def test_student_repository_initialization_can_replace_an_existing_main_branch(tmp_path: Path) -> None:

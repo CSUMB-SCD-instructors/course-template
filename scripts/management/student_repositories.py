@@ -459,7 +459,12 @@ def _initialize_student_repository(
   *,
   force: bool = False,
 ) -> None:
-  """Create a student's main branch from the base and add its private token."""
+  """Create a student's ``base`` and ``main`` branches from the course base.
+
+  ``base`` deliberately has no student-specific token.  It is a copy of the
+  shared course base that lives in the student's own remote, so students can
+  fetch ``origin/base`` without having to configure a second remote.
+  """
   with tempfile.TemporaryDirectory(prefix="course-student-repo-") as raw_tempdir:
     base_clone = Repo.clone_from(base_url, raw_tempdir, branch=base_branch)
     root = Path(base_clone.working_tree_dir or raw_tempdir)
@@ -471,10 +476,36 @@ def _initialize_student_repository(
       author=actor,
       committer=actor,
     )
+    # Publish the unmodified course commit first.  main then receives the
+    # student-only .env commit below it.
+    base_push_args = [student_repository_remote, f"{base_branch}:{base_branch}"]
+    if force:
+      base_push_args.insert(0, "--force")
+    base_clone.git.push(*base_push_args)
     push_args = [student_repository_remote, f"{base_branch}:main"]
     if force:
       push_args.insert(0, "--force")
     base_clone.git.push(*push_args)
+
+
+def _sync_student_base_branch(
+  base_url: str,
+  base_branch: str,
+  student_repository_remote: str,
+) -> None:
+  """Make a student's base branch exactly match the latest course base.
+
+  The course publisher owns this branch.  Force-pushing is intentional: a
+  release can have orphan history after ``--blank-slate``, and student work
+  belongs on main rather than on the update source.
+  """
+  with tempfile.TemporaryDirectory(prefix="course-student-base-") as raw_tempdir:
+    base_clone = Repo.clone_from(base_url, raw_tempdir, branch=base_branch)
+    base_clone.git.push(
+      "--force",
+      student_repository_remote,
+      f"{base_branch}:{base_branch}",
+    )
 
 
 def provision_student_repositories(
@@ -561,6 +592,12 @@ def provision_student_repositories(
         force=overwrite_existing,
       )
       student_repo.edit(default_branch="main")
+    else:
+      _sync_student_base_branch(
+        base_url,
+        settings["base_branch"],
+        student_repo.clone_url,
+      )
 
   _write_base_index(base_url, settings, students)
   base_repo.edit(default_branch=settings["index_branch"])

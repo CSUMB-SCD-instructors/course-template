@@ -2,8 +2,6 @@
 # Merge the latest instructor release into the currently checked-out student branch.
 set -euo pipefail
 
-BASE_REMOTE="course-base"
-BASE_URL="{{ base_repo_url }}"
 BASE_BRANCH="base"
 
 if ! git diff --quiet || ! git diff --cached --quiet; then
@@ -11,11 +9,8 @@ if ! git diff --quiet || ! git diff --cached --quiet; then
   exit 1
 fi
 
-if git remote get-url "$BASE_REMOTE" >/dev/null 2>&1; then
-  git remote set-url "$BASE_REMOTE" "$BASE_URL"
-else
-  git remote add "$BASE_REMOTE" "$BASE_URL"
-fi
-
-git fetch "$BASE_REMOTE" "$BASE_BRANCH"
-git merge --no-edit "$BASE_REMOTE/$BASE_BRANCH"
+# Every private student repository receives a publisher-managed base branch.
+# Fetching from origin lets students update without configuring a separate
+# course-base remote.
+git fetch origin "$BASE_BRANCH"
+git merge --no-edit "origin/$BASE_BRANCH"

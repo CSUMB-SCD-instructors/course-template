@@ -9,6 +9,7 @@ from github.GithubException import GithubException
 from scripts.management.course_config import (
   ConfigError,
   prune_tree,
+  redact_tree,
   render_template,
   render_tree,
   resolve_target,
@@ -17,13 +18,16 @@ from scripts.management.manage_course import build_parser
 from scripts.management.student_repositories import (
   StudentRepository,
   _build_publication_tree,
+  _add_team_maintainer,
   _initialize_student_repository,
   _sync_student_base_branch,
   _invite_email_to_team,
+  instructor_repository,
   base_index_readme,
   publish_base,
   student_token,
   student_token_secret,
+  instructor_github_username,
   repository_settings,
   staff_members,
   student_repositories,
@@ -59,6 +63,59 @@ def test_prune_tree_uses_include_and_exclude(tmp_path: Path) -> None:
   assert not (tmp_path / "instructor-notes.md").exists()
 
 
+def test_python_redaction_stubs_functions_by_default(tmp_path: Path) -> None:
+  source = tmp_path / "starter.py"
+  source.write_text(
+    """@decorator\ndef public(value: int) -> int:\n  \"\"\"Public API documentation.\"\"\"\n  secret = value + 1\n  return secret\n\nclass Worker:\n  def run(self) -> str:\n    \"\"\"Run the worker.\"\"\"\n    return \"secret\"\n\ndef outer() -> None:\n  def inner() -> None:\n    print(\"secret\")\n  inner()\n""",
+    encoding="utf-8",
+  )
+  config = {
+    "defaults": {"publish": {"redact": [{"path": "starter.py"}]}},
+    "targets": {"course": {}},
+  }
+
+  redact_tree(tmp_path, config, "course")
+
+  assert source.read_text(encoding="utf-8") == (
+    """@decorator\ndef public(value: int) -> int:\n  \"\"\"Public API documentation.\"\"\"\n  raise NotImplementedError\n\nclass Worker:\n  def run(self) -> str:\n    \"\"\"Run the worker.\"\"\"\n    raise NotImplementedError\n\ndef outer() -> None:\n  raise NotImplementedError\n"""
+  )
+
+
+def test_python_redaction_supports_explicit_mode_and_compact_functions(tmp_path: Path) -> None:
+  source = tmp_path / "starter.py"
+  source.write_text("def public(): return 'secret'\n", encoding="utf-8")
+  config = {
+    "defaults": {
+      "publish": {
+        "redact": [{"path": "starter.py", "mode": "python-function-stubs"}],
+      },
+    },
+    "targets": {"course": {}},
+  }
+
+  redact_tree(tmp_path, config, "course")
+
+  assert source.read_text(encoding="utf-8") == "def public(): raise NotImplementedError\n"
+
+
+def test_python_redaction_can_keep_marked_functions(tmp_path: Path) -> None:
+  source = tmp_path / "starter.py"
+  source.write_text(
+    """# redaction: keep\ndef public():\n  return \"visible\"\n\n# redaction: keep\n@decorator\ndef decorated():\n  return \"also visible\"\n\ndef private():\n  return \"hidden\"\n""",
+    encoding="utf-8",
+  )
+  config = {
+    "defaults": {"publish": {"redact": [{"path": "starter.py"}]}},
+    "targets": {"course": {}},
+  }
+
+  redact_tree(tmp_path, config, "course")
+
+  assert source.read_text(encoding="utf-8") == (
+    """# redaction: keep\ndef public():\n  return \"visible\"\n\n# redaction: keep\n@decorator\ndef decorated():\n  return \"also visible\"\n\ndef private():\n  raise NotImplementedError\n"""
+  )
+
+
 def test_templates_use_derived_common_student_repo_url(tmp_path: Path) -> None:
   (tmp_path / "README.md.j2").write_text(
     "git clone {{ student_repo_url }} {{ on_machine_repo_directory }}\n",
@@ -84,6 +141,45 @@ def test_publish_base_cli_exposes_unified_workflow_flags() -> None:
 
   assert args.per_student_repos
   assert not args.skip_add_students
+
+
+def test_instructor_github_username_is_optional_and_adds_team_maintainer() -> None:
+  assert instructor_github_username({}) == ""
+  assert instructor_github_username({"instructor_github_username": " sogden "}) == "sogden"
+
+  class GitHub:
+    def get_user(self, username: str) -> str:
+      return username
+
+  class Team:
+    def __init__(self) -> None:
+      self.memberships: list[tuple[str, str]] = []
+
+    def add_membership(self, user: str, role: str) -> None:
+      self.memberships.append((user, role))
+
+  team = Team()
+  _add_team_maintainer(GitHub(), team, "sogden")
+  assert team.memberships == [("sogden", "maintainer")]
+
+
+def test_instructor_repository_is_optional_and_uses_the_configured_slug() -> None:
+  resolved = {
+    "course_code": "CST463",
+    "cohort_slug": "fall2026",
+    "github_org": "example-org",
+    "base_repo_name": "CST463-fall2026-base",
+    "base_repo_url": "https://example.org/CST463-fall2026-base.git",
+    "instructor_slug": "samogden",
+  }
+
+  repository = instructor_repository(resolved)
+
+  assert repository == StudentRepository(
+    None, "samogden", "CST463-fall2026-samogden", is_instructor=True
+  )
+  resolved.pop("instructor_slug")
+  assert instructor_repository(resolved) is None
 
 
 def test_publish_base_rejects_skipping_students_for_per_student_repositories(tmp_path: Path) -> None:

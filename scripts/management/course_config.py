@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import fnmatch
 import json
 import os
@@ -28,6 +29,9 @@ class TemplateError(Exception):
 
 class RedactionError(Exception):
   pass
+
+
+_PYTHON_REDACTION_KEEP = re.compile(r"#\s*redact(?:ion)?\s*:\s*keep\b", re.IGNORECASE)
 
 
 def merge_values(base: Any, override: Any) -> Any:
@@ -333,6 +337,90 @@ def redact_c_functions(path: Path) -> None:
   path.write_text("".join(lines), encoding="utf-8")
 
 
+def redact_python_functions(path: Path) -> None:
+  """Replace Python function bodies with ``NotImplementedError`` stubs."""
+  source = path.read_text(encoding="utf-8")
+  try:
+    tree = ast.parse(source, filename=str(path))
+  except SyntaxError as exc:
+    raise RedactionError(f"Could not parse Python file {path}: {exc}") from exc
+
+  lines = source.splitlines(keepends=True)
+
+  def is_exempt(function: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    definition_line = lines[function.lineno - 1]
+    if _PYTHON_REDACTION_KEEP.search(definition_line):
+      return True
+
+    # Permit the marker immediately before a decorator as well as immediately
+    # before the def line, so it remains readable on decorated functions.
+    line_number = function.lineno - 2
+    while line_number >= 0:
+      candidate = lines[line_number].strip()
+      if not candidate:
+        break
+      if _PYTHON_REDACTION_KEEP.search(lines[line_number]):
+        return True
+      if not candidate.startswith("@"):
+        break
+      line_number -= 1
+    return False
+
+  functions = [
+    node for node in ast.walk(tree)
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+  ]
+  # Replacing an outer function also removes nested functions. Avoid
+  # overlapping replacements while retaining class methods as independent
+  # functions.
+  replacements: list[tuple[int, int, list[str]]] = []
+  replaced_ranges: list[tuple[int, int]] = []
+  for function in sorted(functions, key=lambda node: (node.lineno, -node.end_lineno)):
+    if not function.body:
+      continue
+    if is_exempt(function):
+      continue
+
+    # A leading string literal is the function's docstring. Keep it visible
+    # in the published source and redact only the implementation after it.
+    implementation = function.body
+    if (
+      isinstance(implementation[0], ast.Expr)
+      and isinstance(implementation[0].value, ast.Constant)
+      and isinstance(implementation[0].value.value, str)
+    ):
+      implementation = implementation[1:]
+    if not implementation:
+      continue
+
+    body_start = implementation[0].lineno - 1
+    body_end = implementation[-1].end_lineno - 1
+    if any(start <= body_start <= end for start, end in replaced_ranges):
+      continue
+
+    if body_start == function.lineno - 1:
+      # Handle compact definitions such as ``def f(): return secret``.
+      prefix = lines[body_start][:implementation[0].col_offset].rstrip()
+      newline = "\n" if lines[body_start].endswith("\n") else ""
+      replacements.append((
+        body_start,
+        body_end + 1,
+        [f"{prefix} raise NotImplementedError{newline}"],
+      ))
+    else:
+      indent = re.match(r"[ \t]*", lines[body_start]).group(0)
+      replacements.append((
+        body_start,
+        body_end + 1,
+        [f"{indent}raise NotImplementedError\n"],
+      ))
+    replaced_ranges.append((body_start, body_end))
+
+  for start, end, replacement_lines in sorted(replacements, reverse=True):
+    lines[start:end] = replacement_lines
+  path.write_text("".join(lines), encoding="utf-8")
+
+
 def redact_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
   _, publish_cfg = load_publish_cfg(config, target)
   redactions = list(publish_cfg.get("redact", []))
@@ -344,8 +432,8 @@ def redact_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
     if not isinstance(entry, dict):
       raise ConfigError("Each publish.redact entry must be a mapping")
     mode = entry.get("mode")
-    if not isinstance(mode, str) or not mode:
-      raise ConfigError("Each publish.redact entry must include a non-empty 'mode'")
+    if mode is not None and (not isinstance(mode, str) or not mode):
+      raise ConfigError("Each publish.redact 'mode' must be a non-empty string")
 
     patterns: list[str] = []
     path_value = entry.get("path")
@@ -386,12 +474,22 @@ def redact_tree(root: Path, config: dict[str, Any], target: str) -> list[Path]:
     mode = entry["mode"]
     for path in matches:
       rel_path = path.relative_to(root).as_posix()
-      if mode == "empty":
+      effective_mode = mode
+      if effective_mode is None:
+        if path.suffix == ".py":
+          effective_mode = "python-function-stubs"
+        else:
+          raise ConfigError(
+            f"Redaction mode is required for non-Python file {rel_path}"
+          )
+      if effective_mode == "empty":
         path.write_text("", encoding="utf-8")
-      elif mode == "c-function-stubs":
+      elif effective_mode == "c-function-stubs":
         redact_c_functions(path)
+      elif effective_mode == "python-function-stubs":
+        redact_python_functions(path)
       else:
-        raise ConfigError(f"Unknown publish.redact mode '{mode}' for {rel_path}")
+        raise ConfigError(f"Unknown publish.redact mode '{effective_mode}' for {rel_path}")
 
       if rel_path not in redacted_seen:
         redacted.append(path)

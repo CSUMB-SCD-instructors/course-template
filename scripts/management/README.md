@@ -27,6 +27,23 @@ Use explicit `publish.include` and `publish.exclude` lists to define the
 student-facing surface. Add only explicit `publish.redact` rules for protected
 files.
 
+For Python files, omitting `mode` automatically redacts function bodies to
+`raise NotImplementedError` while preserving function signatures, decorators, and leading
+docstrings. Use
+`mode: python-function-stubs` when you want to be explicit. Other redaction
+modes, such as `c-function-stubs`, must still be named explicitly.
+
+To keep a particular Python function, add `# redaction: keep` immediately
+before its definition. The marker may also appear immediately before the
+function's decorators.
+
+Set `defaults.instructor_slug` to the instructor's GitHub username to make that
+account a maintainer of the staff, cohort-reader, and per-student teams. It
+also creates and synchronizes `<course>-<cohort>-<instructor_slug>` even when
+the instructor is not on the roster. Leave it empty to disable the instructor
+repository. `instructor_github_username` remains an optional override when the
+repository suffix and GitHub username differ.
+
 Existing per-student configurations should rename `student_repositories` to
 `per_student_repositories`; `student_repo_url` is no longer configured.
 
@@ -58,10 +75,11 @@ not use a short or public salt such as `42`.
 
 ## Updating private student repositories
 
-Each private student repository has a publisher-managed `base` branch. On every
-`publish-base --per-student-repos` run, that branch is updated to exactly match
-the shared cohort base; student work on `main` is not changed. Students can
-inspect it on GitHub or update their work with:
+Each private student (and optional instructor) repository has a
+publisher-managed `base` branch. On every `publish-base --per-student-repos`
+run, that branch is updated to exactly match the shared cohort base; work on
+`main` is not changed. Students can inspect it on GitHub or update their work
+with:
 
 ```bash
 git fetch origin base

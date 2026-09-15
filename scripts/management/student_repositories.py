@@ -16,7 +16,7 @@ from typing import Any
 from git import Actor, GitCommandError, Repo
 from github.GithubException import GithubException, UnknownObjectException
 
-from .console import confirm, info, success
+from .console import confirm, info, success, warn
 from .course_config import (
   ConfigError,
   load_config,
@@ -32,9 +32,10 @@ from .student_team_management import github_client, invite_by_email, read_studen
 
 @dataclass(frozen=True)
 class StudentRepository:
-  email: str
+  email: str | None
   slug: str
   repository_name: str
+  is_instructor: bool = False
 
 
 TOKEN_SECRET_PLACEHOLDERS = {
@@ -128,6 +129,25 @@ def student_repositories(resolved: dict[str, Any], emails: list[str]) -> list[St
   return students
 
 
+def instructor_repository(resolved: dict[str, Any]) -> StudentRepository | None:
+  """Return the optional instructor-owned repository to synchronize."""
+  slug = resolved.get("instructor_slug", "")
+  if not isinstance(slug, str):
+    raise ConfigError("instructor_slug must be a repository slug string")
+  slug = slug.strip()
+  if not slug:
+    return None
+  if not re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", slug):
+    raise ConfigError("instructor_slug may contain only letters, numbers, and hyphens")
+  settings = repository_settings(resolved)
+  return StudentRepository(
+    email=None,
+    slug=slug,
+    repository_name=f"{settings['course_code']}-{settings['cohort_slug']}-{slug}",
+    is_instructor=True,
+  )
+
+
 def staff_members(resolved: dict[str, Any]) -> list[str]:
   """Return configured staff GitHub usernames or email addresses."""
   staff = resolved.get("staff", [])
@@ -136,11 +156,45 @@ def staff_members(resolved: dict[str, Any]) -> list[str]:
   return list(dict.fromkeys(staff))
 
 
+def instructor_github_username(resolved: dict[str, Any]) -> str:
+  """Return the optional GitHub username that manages every course team."""
+  instructor = resolved.get("instructor_github_username") or resolved.get("instructor_slug", "")
+  if not isinstance(instructor, str):
+    raise ConfigError("instructor_github_username must be a GitHub username string")
+  return instructor.strip()
+
+
+def _add_team_maintainer(gh: Any, team: Any, username: str) -> None:
+  """Make the configured instructor a maintainer, tolerating repeat runs."""
+  try:
+    team.add_membership(gh.get_user(username), role="maintainer")
+  except GithubException as exc:
+    # GitHub returns 422 when the user already has team membership.
+    if getattr(exc, "status", None) != 422:  # pragma: no cover - GitHub response
+      raise
+
+
 def _get_or_create_repo(org: Any, name: str, description: str) -> tuple[Any, bool]:
   try:
     return org.get_repo(name), False
   except UnknownObjectException:
-    return org.create_repo(name, private=True, auto_init=False, description=description), True
+    # A direct lookup can return 404 for an object that is not visible to the
+    # token. Check the organization listing before deciding it is absent.
+    existing = next(
+      (repo for repo in org.get_repos(type="all") if repo.name.casefold() == name.casefold()),
+      None,
+    )
+    if existing is not None:
+      return existing, False
+    try:
+      return org.create_repo(name, private=True, auto_init=False, description=description), True
+    except GithubException as create_exc:
+      if getattr(create_exc, "status", None) == 422:
+        raise ConfigError(
+          f"GitHub reported repository '{name}' exists but it could not be looked up. "
+          "Check the authenticated account's organization permissions and repository name."
+        ) from create_exc
+      raise
 
 
 def _get_or_create_team(org: Any, name: str, description: str) -> tuple[Any, bool]:
@@ -148,7 +202,26 @@ def _get_or_create_team(org: Any, name: str, description: str) -> tuple[Any, boo
   try:
     return org.get_team_by_slug(slug), False
   except UnknownObjectException:
-    return org.create_team(name=name, privacy="closed", description=description), True
+    # Do not blindly treat a 404 as absence: renamed teams and insufficient
+    # visibility can produce the same response from get_team_by_slug.
+    existing = next(
+      (
+        team for team in org.get_teams()
+        if team.name.casefold() == name.casefold() or team.slug.casefold() == slug.casefold()
+      ),
+      None,
+    )
+    if existing is not None:
+      return existing, False
+    try:
+      return org.create_team(name=name, privacy="closed", description=description), True
+    except GithubException as create_exc:
+      if getattr(create_exc, "status", None) == 422:
+        raise ConfigError(
+          f"GitHub reported team '{name}' exists but it could not be looked up. "
+          "Check the authenticated account's organization permissions and team slug."
+        ) from create_exc
+      raise
 
 
 def _invite_email_to_team(org: Any, team: Any, email: str) -> bool:
@@ -165,6 +238,12 @@ def _invite_email_to_team(org: Any, team: Any, email: str) -> bool:
     # Those states are both acceptable for repeatable provisioning.
     status = getattr(exc, "status", None)
     if status == 422:  # pragma: no cover - GitHub response
+      data = getattr(exc, "data", {})
+      message = data.get("message", str(exc)) if isinstance(data, dict) else str(exc)
+      if "already" not in message.casefold():
+        warn(f"GitHub rejected invitation for {email}: {message}")
+      else:
+        info(f"Invitation unchanged for {email}: {message}")
       return False
     if status == 403:
       org_name = getattr(org, "login", "the organization")
@@ -223,6 +302,7 @@ def _ensure_base_access(
   settings: dict[str, str],
   staff: list[str],
   emails: list[str],
+  instructor: str,
 ) -> Any:
   """Ensure staff and enrolled students have their cohort-level access."""
   staff_team, _ = _get_or_create_team(
@@ -241,7 +321,12 @@ def _ensure_base_access(
   )
   cohort_team.set_repo_permission(base_repo, "pull")
   for email in emails:
-    _invite_email_to_team(org, cohort_team, email)
+    if _invite_email_to_team(org, cohort_team, email):
+      info(f"Invited {email} to {settings['cohort_slug']} cohort access")
+
+  if instructor:
+    _add_team_maintainer(gh, staff_team, instructor)
+    _add_team_maintainer(gh, cohort_team, instructor)
 
   return staff_team
 
@@ -389,7 +474,15 @@ def publish_base(
       confirm_changes=False,
     )
   elif not skip_add_students:
-    _ensure_base_access(gh, org, base_repo, settings, staff, emails)
+    _ensure_base_access(
+      gh,
+      org,
+      base_repo,
+      settings,
+      staff,
+      emails,
+      instructor_github_username(resolved),
+    )
     base_repo.edit(default_branch=settings["index_branch"])
   else:
     staff_team, _ = _get_or_create_team(
@@ -400,6 +493,9 @@ def publish_base(
     staff_team.set_repo_permission(base_repo, "maintain")
     for member in staff:
       _add_staff_member(gh, org, staff_team, member)
+    instructor = instructor_github_username(resolved)
+    if instructor:
+      _add_team_maintainer(gh, staff_team, instructor)
     base_repo.edit(default_branch=settings["index_branch"])
 
   success(f"Published {settings['base_repo_name']}:{publication_branch}")
@@ -453,31 +549,32 @@ def _initialize_student_repository(
   base_url: str,
   base_branch: str,
   student_repository_remote: str,
-  token: str,
+  token: str | None,
   config: dict[str, Any],
   target: str,
   *,
   force: bool = False,
 ) -> None:
-  """Create a student's ``base`` and ``main`` branches from the course base.
+  """Create managed ``base`` and ``main`` branches from the course base.
 
-  ``base`` deliberately has no student-specific token.  It is a copy of the
-  shared course base that lives in the student's own remote, so students can
-  fetch ``origin/base`` without having to configure a second remote.
+  ``base`` deliberately has no student-specific token. Student repositories
+  receive a token commit on ``main``; an instructor repository does not need
+  one.
   """
   with tempfile.TemporaryDirectory(prefix="course-student-repo-") as raw_tempdir:
     base_clone = Repo.clone_from(base_url, raw_tempdir, branch=base_branch)
     root = Path(base_clone.working_tree_dir or raw_tempdir)
-    (root / ".env").write_text(f"STUDENT_TOKEN={token}\n", encoding="utf-8")
-    base_clone.git.add(".env")
-    actor = Actor("Course management", "course-management@example.invalid")
-    base_clone.index.commit(
-      "Add student usage token",
-      author=actor,
-      committer=actor,
-    )
-    # Publish the unmodified course commit first.  main then receives the
-    # student-only .env commit below it.
+    if token is not None:
+      (root / ".env").write_text(f"STUDENT_TOKEN={token}\n", encoding="utf-8")
+      base_clone.git.add(".env")
+      actor = Actor("Course management", "course-management@example.invalid")
+      base_clone.index.commit(
+        "Add student usage token",
+        author=actor,
+        committer=actor,
+      )
+    # Publish the unmodified course commit first. Student main then receives
+    # the student-only .env commit above it when a token was configured.
     base_push_args = [student_repository_remote, f"{base_branch}:{base_branch}"]
     if force:
       base_push_args.insert(0, "--force")
@@ -523,15 +620,28 @@ def provision_student_repositories(
   # Validate the shared secret before prompting or creating GitHub resources.
   student_token_secret(resolved)
   staff = staff_members(resolved)
+  instructor = instructor_github_username(resolved)
+  instructor_repo = instructor_repository(resolved)
+  managed_repositories = list(students)
+  if instructor_repo is not None:
+    if any(student.repository_name == instructor_repo.repository_name for student in students):
+      raise ConfigError(
+        "instructor_slug is already present in the student roster"
+      )
+    managed_repositories.append(instructor_repo)
 
-  info(f"Provisioning {len(students)} student repositories for {target}")
-  for student in students:
+  info(
+    f"Synchronizing {len(managed_repositories)} managed repositories for {target} "
+    f"({len(students)} student{'s' if len(students) != 1 else ''}"
+    f"{', 1 instructor' if instructor_repo is not None else ''})"
+  )
+  for student in managed_repositories:
     print(f"  - {student.repository_name}")
   print(f"  Staff members: {len(staff)} configured (Maintain access)")
   if overwrite_existing:
-    print("  Existing student main branches: WILL BE REPLACED from the current base")
+    print("  Existing managed main branches: WILL BE REPLACED from the current base")
   if dry_run:
-    info("Dry run enabled: no teams or repositories will be created.")
+    info("Dry run enabled: no GitHub resources will be created or synchronized.")
     return 0
 
   gh = github_client()
@@ -547,18 +657,26 @@ def provision_student_repositories(
 
   if confirm_changes:
     confirmation = (
-      "Overwrite existing student main branches from the current base? (y/N): "
+      "Overwrite existing managed main branches from the current base? (y/N): "
       if overwrite_existing
-      else "Create missing teams and repositories? (y/N): "
+      else "Synchronize base branches and create missing teams and repositories? (y/N): "
     )
     if not confirm(confirmation):
       info("Student provisioning cancelled.")
       return 0
 
-  staff_team = _ensure_base_access(gh, org, base_repo, settings, staff, emails)
+  staff_team = _ensure_base_access(
+    gh,
+    org,
+    base_repo,
+    settings,
+    staff,
+    emails,
+    instructor,
+  )
 
-  for student in students:
-    info(f"Provisioning {student.repository_name}")
+  for student in managed_repositories:
+    info(f"Synchronizing {student.repository_name}")
     student_repo, _ = _get_or_create_repo(
       org,
       student.repository_name,
@@ -569,11 +687,15 @@ def provision_student_repositories(
       f"{student.repository_name}:student",
       f"Write access to {student.repository_name}",
     )
-    repository_invitation_created = _invite_email_to_team(org, student_team, student.email)
+    repository_invitation_created = False
+    if student.email is not None:
+      repository_invitation_created = _invite_email_to_team(org, student_team, student.email)
     if repository_invitation_created:
       info(f"Invited {student.email} to {student.repository_name}")
     student_team.set_repo_permission(student_repo, "push")
     staff_team.set_repo_permission(student_repo, "maintain")
+    if instructor:
+      _add_team_maintainer(gh, student_team, instructor)
 
     try:
       student_repo.get_branch("main")
@@ -586,7 +708,7 @@ def provision_student_repositories(
         base_url,
         settings["base_branch"],
         student_repo.clone_url,
-        student_token(resolved, student.email),
+        student_token(resolved, student.email) if student.email is not None else None,
         config,
         target,
         force=overwrite_existing,

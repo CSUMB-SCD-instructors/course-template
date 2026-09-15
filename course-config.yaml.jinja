@@ -2,6 +2,9 @@
 defaults:
   source_branch: main
   github_org: {{ github_org | tojson }}
+  # GitHub username and optional instructor repository suffix. When non-empty,
+  # <course>-<cohort>-<instructor_slug> is synchronized on every publication.
+  instructor_slug: ""
   on_machine_repo_directory: {{ course_code | tojson }}
   render_exclude_dirs:
     - slides
@@ -33,6 +36,7 @@ defaults:
       - "**/solution/**"
       - "**/.idea/**"
     # Add only explicit redactions for files that this course must withhold.
+    # Python files default to function-level stubs when mode is omitted.
     redact: []
   per_student_repositories:
     # Only required when publishing with --per-student-repos. Names are

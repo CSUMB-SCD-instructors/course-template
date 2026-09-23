@@ -6,6 +6,7 @@ import pytest
 from git import Repo
 from github.GithubException import GithubException
 
+import scripts.management.course_config as course_config
 from scripts.management.course_config import (
   ConfigError,
   prune_tree,
@@ -113,6 +114,40 @@ def test_python_redaction_can_keep_marked_functions(tmp_path: Path) -> None:
 
   assert source.read_text(encoding="utf-8") == (
     """# redaction: keep\ndef public():\n  return \"visible\"\n\n# redaction: keep\n@decorator\ndef decorated():\n  return \"also visible\"\n\ndef private():\n  raise NotImplementedError\n"""
+  )
+
+
+def test_c_redaction_preserves_multiline_signature(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+  source = tmp_path / "starter.c"
+  source.write_text(
+    """static void scheduler__lifo__timer_interrupt_fires(
+  SCHEDULER* scheduler, /* { ignored */
+  const SCHEDULER_JOB_VIEW* current,
+  float now
+) {
+  scheduler__default__timer_interrupt_fires(scheduler, current, now);
+}
+""",
+    encoding="utf-8",
+  )
+  monkeypatch.setattr(course_config, "_parse_ctags_functions", lambda _: [{
+    "name": "scheduler__lifo__timer_interrupt_fires",
+    "line": 1,
+    "end": 7,
+    "typeref": "typename:void",
+  }])
+
+  course_config.redact_c_functions(source)
+
+  assert source.read_text(encoding="utf-8") == (
+    """static void scheduler__lifo__timer_interrupt_fires(
+  SCHEDULER* scheduler, /* { ignored */
+  const SCHEDULER_JOB_VIEW* current,
+  float now
+) {
+  // todo
+}
+"""
   )
 
 

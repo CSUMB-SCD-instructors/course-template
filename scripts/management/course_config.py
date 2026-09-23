@@ -307,6 +307,50 @@ def _stub_return_expr(typeref: str) -> str | None:
   return f"({type_name}){{0}}"
 
 
+def _c_function_body_line(lines: list[str], start: int, end: int) -> int:
+  """Return the line containing a function body's opening brace.
+
+  Ctags supplies the function's full extent but not the body boundary. This is
+  deliberately only a small lexical scan so comments and quoted literals in a
+  multiline signature cannot be mistaken for that brace.
+  """
+  block_comment = False
+  quote: str | None = None
+  escaped = False
+
+  for line_number in range(start, end + 1):
+    line = lines[line_number]
+    column = 0
+    while column < len(line):
+      character = line[column]
+      next_character = line[column + 1] if column + 1 < len(line) else ""
+      if block_comment:
+        if character == "*" and next_character == "/":
+          block_comment = False
+          column += 2
+          continue
+      elif quote:
+        if escaped:
+          escaped = False
+        elif character == "\\":
+          escaped = True
+        elif character == quote:
+          quote = None
+      elif character == "/" and next_character == "/":
+        break
+      elif character == "/" and next_character == "*":
+        block_comment = True
+        column += 2
+        continue
+      elif character in {"'", '"'}:
+        quote = character
+      elif character == "{":
+        return line_number
+      column += 1
+
+  raise RedactionError("Could not locate function body within ctags bounds")
+
+
 def redact_c_functions(path: Path) -> None:
   lines = path.read_text(encoding="utf-8").splitlines(keepends=True)
   replacements: list[tuple[int, int, list[str]]] = []
@@ -329,7 +373,8 @@ def redact_c_functions(path: Path) -> None:
     if return_expr is not None:
       stub_lines.append(f"{body_indent}return {return_expr};\n")
 
-    replacements.append((start + 1, end, stub_lines))
+    body_line = _c_function_body_line(lines, start, end)
+    replacements.append((body_line + 1, end, stub_lines))
 
   for start, end, replacement_lines in sorted(replacements, reverse=True):
     lines[start:end] = replacement_lines

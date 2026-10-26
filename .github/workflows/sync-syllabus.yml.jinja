@@ -53,5 +53,5 @@ jobs:
         run: |
           python scripts/manage_course.py sync-syllabus \
             --destination syllabi-repo \
-            --target {{ cohort_slug }} \
+            --all-modes \
             --commit-message "Update syllabus from ${GITHUB_SHA::7}"

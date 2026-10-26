@@ -108,6 +108,25 @@ def resolve_target(config: dict[str, Any], target: str) -> dict[str, Any]:
   return resolved
 
 
+def resolve_mode(config: dict[str, Any], mode: str) -> dict[str, Any]:
+  """Resolve settings shared by every cohort using a course mode."""
+  defaults = config.get("defaults", {})
+  modes = config.get("modes", {})
+  if mode not in modes:
+    raise ConfigError(
+      f"Unknown mode '{mode}'. Available modes: {', '.join(sorted(modes))}"
+    )
+  if not isinstance(modes[mode], dict):
+    raise ConfigError(f"Mode '{mode}' must be a mapping")
+
+  resolved: dict[str, Any] = {}
+  if isinstance(defaults, dict):
+    resolved = merge_values(resolved, defaults)
+  resolved = merge_values(resolved, modes[mode])
+  resolved["mode"] = mode
+  return resolved
+
+
 def resolve_target_choice(args: Any) -> str:
   if getattr(args, "target", None):
     return args.target

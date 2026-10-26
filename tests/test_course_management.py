@@ -13,6 +13,7 @@ from scripts.management.course_config import (
   redact_tree,
   render_template,
   render_tree,
+  resolve_mode,
   resolve_target,
 )
 from scripts.management.manage_course import build_parser
@@ -304,6 +305,51 @@ def test_sync_syllabi_writes_commits_and_skips_unchanged(tmp_path: Path) -> None
     push=False,
   ) == []
   assert repo.head.commit.hexsha == first_commit
+
+
+def test_sync_syllabi_renders_each_mode_without_cohort_targets(tmp_path: Path) -> None:
+  source_root = tmp_path / "course"
+  destination_root = tmp_path / "syllabi"
+  source_root.mkdir()
+  destination_root.mkdir()
+  (source_root / "syllabus.md.j2").write_text("# {{ course_name }}\n", encoding="utf-8")
+  Repo.init(destination_root)
+  config = {
+    "defaults": {},
+    "modes": {
+      "in-person": {
+        "course_code": "CST334",
+        "course_name": "Operating Systems",
+      },
+      "online": {
+        "course_code": "CST334online",
+        "course_name": "Operating Systems Online",
+      },
+    },
+    "targets": {
+      "fall2026": {"mode": "in-person", "cohort_slug": "fall2026"},
+      "fall2026online": {"mode": "online", "cohort_slug": "fall2026online"},
+    },
+  }
+
+  changed = sync_syllabi(
+    source_root,
+    destination_root,
+    config,
+    None,
+    "Sync test",
+    modes=["in-person", "online"],
+    push=False,
+  )
+
+  assert {path.as_posix() for path in changed} == {
+    "_active/CST334-syllabus.md",
+    "_active/CST334online-syllabus.md",
+  }
+  assert "fall2026" not in (destination_root / "_active" / "CST334-syllabus.md").read_text(
+    encoding="utf-8"
+  )
+  assert resolve_mode(config, "online")["mode"] == "online"
 
 
 def test_sync_syllabi_dry_run_does_not_write(tmp_path: Path) -> None:

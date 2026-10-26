@@ -57,11 +57,21 @@ Run `python scripts/manage_course.py <command> --help` for command-specific opti
 
   syllabus = subparsers.add_parser("sync-syllabus", help="Render and sync syllabi to a syllabi repository")
   syllabus.add_argument("--config", default=DEFAULT_CONFIG_PATH, help="Use custom YAML configuration file")
-  syllabus.add_argument(
+  syllabus_selection = syllabus.add_mutually_exclusive_group(required=True)
+  syllabus_selection.add_argument(
     "--target",
     action="append",
-    required=True,
-    help="Target to sync; specify once for each target",
+    help="Cohort target to sync; specify once for each target",
+  )
+  syllabus_selection.add_argument(
+    "--mode",
+    action="append",
+    help="Course mode to sync; specify once for each mode",
+  )
+  syllabus_selection.add_argument(
+    "--all-modes",
+    action="store_true",
+    help="Sync one syllabus for every configured course mode",
   )
   syllabus.add_argument(
     "--destination",

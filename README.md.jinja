@@ -25,6 +25,18 @@ python scripts/manage_course.py publish-base --target {{ cohort_slug }} --per-st
 students Read access. Without `--per-student-repos`, students use that one
 shared repository directly. See `scripts/management/README.md` for details.
 
+## Publishing Syllabi
+
+The **Sync Syllabus to Syllabi Repository** workflow renders one syllabus for
+each configured `mode`. To run the same sync locally:
+
+```bash
+python scripts/manage_course.py sync-syllabus --destination ../syllabi --all-modes
+```
+
+Use `--mode <mode>` to publish one mode, or `--target <cohort>` only when a
+cohort-specific target override is intentional.
+
 ## Publishing Slides
 
 The included **Sync Slides to Syllabi Repository** workflow publishes

@@ -17,6 +17,7 @@ from .course_config import (
   TemplateError,
   load_config,
   render_template,
+  resolve_mode,
   resolve_target,
   validate_rendered_content,
 )
@@ -34,14 +35,13 @@ def _front_matter(values: dict[str, str]) -> str:
 
 def _render_syllabus(
   source_root: Path,
-  config: dict[str, Any],
-  target: str,
+  resolved: dict[str, Any],
+  description: str,
 ) -> tuple[str, str | None]:
-  resolved = resolve_target(config, target)
   published_course_code = str(resolved.get("published_course_code") or resolved.get("course_code", ""))
   course_name = str(resolved.get("course_name", ""))
   if not published_course_code or not course_name:
-    raise ConfigError(f"Target '{target}' must define course_code and course_name")
+    raise ConfigError(f"{description} must define course_code and course_name")
 
   syllabus_template = source_root / "syllabus.md.j2"
   if not syllabus_template.exists():
@@ -98,13 +98,19 @@ def _render_syllabus(
 def build_syllabus_assets(
   source_root: Path,
   config: dict[str, Any],
-  targets: list[str],
+  targets: list[str] | None = None,
+  modes: list[str] | None = None,
 ) -> dict[Path, str]:
   assets: dict[Path, str] = {}
-  for target in targets:
-    resolved = resolve_target(config, target)
+  selections: list[tuple[dict[str, Any], str]] = []
+  for target in targets or []:
+    selections.append((resolve_target(config, target), f"Target '{target}'"))
+  for mode in modes or []:
+    selections.append((resolve_mode(config, mode), f"Mode '{mode}'"))
+
+  for resolved, description in selections:
     published_course_code = str(resolved.get("published_course_code") or resolved.get("course_code", ""))
-    syllabus_content, calendar_content = _render_syllabus(source_root, config, target)
+    syllabus_content, calendar_content = _render_syllabus(source_root, resolved, description)
     assets[Path("_active") / f"{published_course_code}-syllabus.md"] = syllabus_content
     if calendar_content is not None:
       assets[Path("_active") / f"{published_course_code}-calendar.md"] = calendar_content
@@ -131,14 +137,15 @@ def sync_syllabi(
   source_root: Path,
   destination_root: Path,
   config: dict[str, Any],
-  targets: list[str],
+  targets: list[str] | None,
   commit_message: str,
   *,
+  modes: list[str] | None = None,
   dry_run: bool = False,
   push: bool = True,
 ) -> list[Path]:
-  if not targets:
-    raise ConfigError("At least one --target is required")
+  if not targets and not modes:
+    raise ConfigError("Specify at least one --target or --mode")
 
   source_root = source_root.resolve()
   destination_root = destination_root.resolve()
@@ -146,7 +153,7 @@ def sync_syllabi(
   if destination_repo.is_dirty(untracked_files=True):
     raise ConfigError("Destination repository is not clean; commit or stash changes first")
 
-  assets = build_syllabus_assets(source_root, config, targets)
+  assets = build_syllabus_assets(source_root, config, targets, modes)
   changed = _changed_assets(destination_root, assets)
   if not changed:
     info("No syllabus changes to sync.")
@@ -195,6 +202,7 @@ def run_sync_syllabus(args: argparse.Namespace) -> int:
     config,
     args.target,
     commit_message,
+    modes=(list(config.get("modes", {})) if args.all_modes else args.mode),
     dry_run=args.dry_run,
     push=not args.no_push,
   )

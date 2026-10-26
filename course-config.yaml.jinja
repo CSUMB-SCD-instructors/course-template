@@ -45,6 +45,9 @@ defaults:
     # student's private repository; use a long random value, not a guessable salt.
     token_secret: "CHANGE_ME"
 
+# Syllabus synchronization renders one publication for each mode. Keep
+# course-facing syllabus settings (including published_course_code) here;
+# targets are reserved for cohort-specific publication settings.
 modes:
   {{ course_mode }}:
     course_code: {{ course_code | tojson }}

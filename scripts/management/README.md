@@ -15,10 +15,15 @@ python scripts/manage_course.py publish-base --target <cohort>
 # Optionally also create private repositories and teams for each student.
 python scripts/manage_course.py publish-base --target <cohort> --per-student-repos
 
-# Render and sync a syllabus to the central syllabi repository.
+# Render and sync one syllabus for every configured course mode.
 python scripts/manage_course.py sync-syllabus \
   --destination ../syllabi \
-  --target <cohort>
+  --all-modes
+
+# Or render a specific mode (or, for a cohort-specific override, target).
+python scripts/manage_course.py sync-syllabus \
+  --destination ../syllabi \
+  --mode <mode>
 ```
 
 `course-config.yaml` is the single source of course configuration. It resolves
